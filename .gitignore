@@ -1,0 +1,4 @@
+android/build/
+android/signing.keystore
+windows/target/
+windows/gen/

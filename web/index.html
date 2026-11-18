@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>rxConnect</title>
+<style>
+  :root { --bg:#0e0f13; --panel:#1b1d24; --text:#eef0f5; --muted:#8a90a0; --accent:#e0457b; --off:#c0392b; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font:16px system-ui, sans-serif; }
+  button, input { font:inherit; }
+  #join { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:16px; }
+  #join h1 { margin:0; font-weight:600; }
+  #join input { width:min(320px,100%); padding:12px 14px; border-radius:12px; border:1px solid #333; background:var(--panel); color:var(--text); }
+  #join button { width:min(320px,100%); padding:12px; border:0; border-radius:12px; background:var(--accent); color:#fff; cursor:pointer; }
+  #join p { color:var(--muted); font-size:14px; max-width:320px; text-align:center; margin:0; }
+  #call { display:none; position:fixed; inset:0; }
+  #remote { width:100%; height:100%; object-fit:contain; background:#000; }
+  #local { position:absolute; right:16px; top:16px; width:min(28vw,220px); aspect-ratio:4/3; object-fit:cover; border-radius:12px; background:#222; border:2px solid #333; }
+  #local.mirror { transform:scaleX(-1); }
+  #status { position:absolute; left:50%; top:45%; transform:translate(-50%,-50%); color:var(--muted); text-align:center; padding:0 16px; }
+  #bar { position:absolute; left:0; right:0; bottom:0; display:flex; justify-content:center; gap:12px; padding:16px 16px calc(16px + env(safe-area-inset-bottom)); background:linear-gradient(transparent, #000a); }
+  #bar button { width:56px; height:56px; border-radius:50%; border:0; background:var(--panel); color:var(--text); font-size:22px; cursor:pointer; }
+  #bar button.off { background:var(--off); }
+  #bar button.on { background:var(--accent); }
+  #bar #leave { background:var(--off); }
+  [hidden] { display:none !important; }
+  #upd { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; background:#000b; z-index:10; }
+  #upd .box { width:min(360px,100%); background:var(--panel); border-radius:16px; padding:20px; }
+  #upd b { font-size:18px; }
+  #updText { color:var(--muted); margin:10px 0 16px; }
+  #updBar { height:8px; border-radius:4px; background:#333; overflow:hidden; }
+  #updBar i { display:block; height:100%; width:0; background:var(--accent); transition:width .2s; }
+  #updBtns { display:flex; gap:10px; justify-content:flex-end; }
+  #updBtns button { padding:10px 18px; border:0; border-radius:10px; background:#333; color:var(--text); cursor:pointer; }
+  #updBtns #updGo { background:var(--accent); color:#fff; }
+</style>
+</head>
+<body>
+<div id="join">
+  <h1>rxConnect</h1>
+  <input id="room" placeholder="Room name (your secret word)" autocomplete="off">
+  <button id="go">Join</button>
+  <p>Use the same room name on both devices. Anyone who knows it can join, so pick something only you two know.</p>
+</div>
+
+<div id="call">
+  <video id="remote" autoplay playsinline></video>
+  <div id="status">Waiting for the other person…</div>
+  <video id="local" class="mirror" autoplay playsinline muted></video>
+  <div id="bar">
+    <button id="mic" title="Mute / unmute" aria-label="Mute or unmute microphone">🎤</button>
+    <button id="cam" title="Camera on / off" aria-label="Turn camera on or off">📷</button>
+    <button id="screen" title="Share screen" aria-label="Share screen">🖥️</button>
+    <button id="leave" title="Leave" aria-label="Leave call">✖</button>
+  </div>
+</div>
+
+<div id="upd" hidden role="dialog" aria-modal="true" aria-labelledby="updTitle">
+  <div class="box">
+    <b id="updTitle">Update available</b>
+    <p id="updText"></p>
+    <div id="updBar"><i></i></div>
+    <div id="updBtns"><button id="updLater">Later</button><button id="updGo">Update</button></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js" integrity="sha384-nlUQ8ZqCbvStErob+biJNzSgltf6urV3VGqhfIfzhmg9RXmpeRm76ELw0pYnKlTR" crossorigin="anonymous"></script>
+<script>
+const $ = id => document.getElementById(id);
+let peer, call, local, camTrack, screenTrack, me, other;
+
+// Room "abc" has exactly two slots: rxconnect-abc-1 and rxconnect-abc-2. Whoever comes first waits alone.
+const slotId = (room, n) => 'rxconnect-' + room.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + n;
+console.assert(slotId('Me & Her!', 1) === 'rxconnect-me-her--1', 'slotId');
+
+$('room').value = decodeURIComponent(location.hash.slice(1)) || localStorage.getItem('rxroom') || '';
+$('go').onclick = async () => {
+  const room = $('room').value.trim();
+  if (!room) return $('room').focus();
+  try { localStorage.setItem('rxroom', room); } catch {}
+  $('join').style.display = 'none';
+  $('call').style.display = 'block';
+  await startMedia();
+  join(room, 1);
+};
+$('room').onkeydown = e => e.key === 'Enter' && $('go').click();
+
+async function startMedia() {
+  const opts = [{ video: true, audio: true }, { audio: true }, {}];
+  for (const o of opts) {
+    try { local = Object.keys(o).length ? await navigator.mediaDevices.getUserMedia(o) : new MediaStream(); break; } catch {}
+  }
+  camTrack = local.getVideoTracks()[0];
+  if (!camTrack) { // no webcam: send a black frame so screen share still has a video track to swap into
+    const c = Object.assign(document.createElement('canvas'), { width: 640, height: 480 });
+    c.getContext('2d').fillRect(0, 0, 640, 480);
+    camTrack = c.captureStream(1).getVideoTracks()[0];
+    local.addTrack(camTrack);
+    $('cam').classList.add('off'); $('cam').disabled = true;
+  }
+  if (!local.getAudioTracks().length) { $('mic').classList.add('off'); $('mic').disabled = true; }
+  $('local').srcObject = local;
+  if (!navigator.mediaDevices.getDisplayMedia) $('screen').style.display = 'none'; // Android browsers can't share screen
+}
+
+function join(room, n) {
+  me = slotId(room, n); other = slotId(room, 3 - n);
+  peer = new Peer(me);
+  peer.on('open', () => { setStatus('Waiting for the other person…'); dial(); });
+  peer.on('call', c => {
+    if (n === 2 && call) return c.close(); // both dialed at once: slot 2's own call wins, slot 1 takes it
+    c.answer(local); attach(c);
+  });
+  peer.on('disconnected', () => peer.destroyed || peer.reconnect());
+  peer.on('error', e => {
+    if (e.type === 'unavailable-id') {
+      peer.destroy();
+      if (n === 1) return join(room, 2);
+      // Both slots taken: usually one is a stale slot from a dropped connection that the broker frees soon.
+      setStatus('Room busy, retrying…');
+      return setTimeout(() => join(room, 1), 3000);
+    }
+    if (e.type === 'peer-unavailable') return; // other person not here yet: keep waiting alone
+    setStatus('Connection problem: ' + e.type);
+  });
+}
+
+function dial() { attach(peer.call(other, local)); }
+
+function attach(c) {
+  if (call && call !== c) call.close();
+  call = c;
+  c.on('stream', s => { $('remote').srcObject = s; setStatus(''); });
+  const gone = () => {
+    if (call !== c) return;
+    call = null; $('remote').srcObject = null;
+    setStatus('Waiting for the other person…');
+  };
+  c.on('close', gone);
+  c.on('error', gone);
+  // PeerJS doesn't always fire 'close' when the other side drops (closed tab, lost signal).
+  const pc = c.peerConnection;
+  pc && pc.addEventListener('iceconnectionstatechange', () => {
+    if (['failed', 'closed'].includes(pc.iceConnectionState)) gone();
+  });
+}
+
+function setStatus(t) { $('status').textContent = t; $('status').style.display = t ? '' : 'none'; }
+
+function sendVideo(track) {
+  const sender = call && call.peerConnection && call.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+  sender && sender.replaceTrack(track);
+  local.removeTrack(local.getVideoTracks()[0]);
+  local.addTrack(track);
+  $('local').classList.toggle('mirror', track === camTrack);
+}
+
+$('mic').onclick = () => {
+  const t = local.getAudioTracks()[0];
+  t.enabled = !t.enabled;
+  $('mic').classList.toggle('off', !t.enabled);
+};
+$('cam').onclick = () => {
+  camTrack.enabled = !camTrack.enabled;
+  $('cam').classList.toggle('off', !camTrack.enabled);
+};
+$('screen').onclick = async () => {
+  if (screenTrack) return stopScreen();
+  try { screenTrack = (await navigator.mediaDevices.getDisplayMedia({ video: true })).getVideoTracks()[0]; } catch { return; }
+  screenTrack.onended = stopScreen; // user pressed the browser's own "Stop sharing"
+  sendVideo(screenTrack);
+  $('screen').classList.add('on');
+};
+function stopScreen() {
+  if (!screenTrack) return;
+  screenTrack.stop(); screenTrack = null;
+  sendVideo(camTrack);
+  $('screen').classList.remove('on');
+}
+$('leave').onclick = () => { call && call.close(); peer && peer.destroy(); local.getTracks().forEach(t => t.stop()); location.reload(); };
+addEventListener('pagehide', () => { call && call.close(); peer && peer.destroy(); });
+
+// Updates: only inside the apps. The native side (android/ Updater, windows/ update.rs) checks GitHub and calls rxUpdate.*.
+const native = window.RxNative ? { check: () => RxNative.check(), install: () => RxNative.install() }
+  : window.__TAURI__ ? { check: () => __TAURI__.core.invoke('check_update'), install: () => __TAURI__.core.invoke('install_update') }
+  : null;
+function updBox(text, pct) {
+  $('upd').hidden = false;
+  $('updText').textContent = text;
+  $('updBar').hidden = pct == null;
+  $('updBtns').hidden = pct != null;
+  if (pct != null) $('updBar').firstChild.style.width = pct + '%';
+}
+window.rxUpdate = {
+  // Updating restarts the app, so never offer it during a call; the next start asks again.
+  ask: v => { if ($('call').style.display === 'block') return; updBox('Version ' + v + ' is ready. Update now?'); $('updGo').hidden = false; $('updGo').focus(); },
+  progress: p => updBox(p < 100 ? 'Downloading… ' + p + '%' : 'Installing…', p),
+  failed: why => { updBox('Update failed: ' + why); $('updGo').hidden = true; },
+  cancel: () => { $('upd').hidden = true; },
+};
+$('updLater').onclick = rxUpdate.cancel;
+$('updGo').onclick = () => { rxUpdate.progress(0); native.install(); };
+native && native.check();
+</script>
+</body>
+</html>

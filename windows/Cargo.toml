@@ -1,0 +1,17 @@
+[package]
+name = "rxconnect"
+version = "1.0.0"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = "2"
+
+[dependencies]
+# custom-protocol: embed ../web in the exe, so plain `cargo build --release` gives a standalone app (no tauri-cli).
+tauri = { version = "2", features = ["custom-protocol"] }
+serde_json = "1"
+ureq = { version = "2", features = ["json"] }
+
+[profile.release]
+strip = true
+lto = true

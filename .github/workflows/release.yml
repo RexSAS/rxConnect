@@ -1,0 +1,37 @@
+# ../release.sh creates release v<N> with the APK; its tag triggers this, which adds the Windows exe built as
+# version N. Until the exe is attached, the Windows app simply doesn't see the update yet.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: windows
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version from the tag
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          [[ "$v" =~ ^[0-9]+$ ]] || { echo "tag $GITHUB_REF_NAME is not v<number>"; exit 1; }
+          echo "RXCONNECT_VERSION=$v" >> "$GITHUB_ENV"
+      - name: Rust
+        run: rustup update stable && rustup default stable
+      - name: Test
+        run: cargo test --release
+      - name: Build
+        run: cargo build --release
+      - name: Upload
+        run: |
+          cp target/release/rxconnect.exe rxconnect-windows-x86_64.exe
+          gh release upload "$GITHUB_REF_NAME" rxconnect-windows-x86_64.exe
+        env:
+          GH_TOKEN: ${{ github.token }}
