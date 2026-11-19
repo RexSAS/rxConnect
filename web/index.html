@@ -131,6 +131,7 @@
   #set label { display:flex; flex-direction:column; gap:6px; margin:16px 0 0; color:var(--muted); font-size:14px; }
   #set select { padding:12px; border-radius:12px; border:1px solid var(--line); background:var(--panel-2); color:var(--text); font:inherit; }
   #set .btn { margin-top:20px; float:right; }
+  #ver { float:left; margin:30px 0 0; color:var(--muted); font-size:13px; }
   .btn { padding:10px 18px; border:0; border-radius:12px; background:var(--panel-2); transition:transform .15s var(--ease), filter .2s; }
   .btn:active { transform:scale(.95); }
   .btn.go { background:var(--accent); color:#fff; font-weight:600; }
@@ -241,6 +242,7 @@
     <button id="mic" class="ctl" aria-label="Mute" title="Mute"><svg class="i"><use href="#i-mic"/></svg></button>
     <button id="cam" class="ctl" aria-label="Turn camera off" title="Camera"><svg class="i"><use href="#i-cam"/></svg></button>
     <button id="screen" class="ctl" aria-label="Share screen" title="Share screen"><svg class="i"><use href="#i-screen"/></svg></button>
+    <button id="callGear" class="ctl" aria-label="Audio settings" title="Audio settings"><svg class="i"><use href="#i-gear"/></svg></button>
     <button id="leave" class="ctl leave" aria-label="Leave call" title="Leave"><svg class="i"><use href="#i-hangup"/></svg></button>
   </nav>
 </section>
@@ -250,6 +252,7 @@
     <div class="head"><div class="ic"><svg class="i"><use href="#i-gear"/></svg></div><b id="setTitle">Audio</b></div>
     <label>Microphone<select id="micSel"></select></label>
     <label id="spkRow">Speaker<select id="spkSel"></select></label>
+    <p id="ver"></p>
     <button id="setDone" class="btn go">Done</button>
   </div>
 </div>
@@ -337,6 +340,28 @@ function tellApp() {
 }
 $('room').onkeydown = e => { if (e.key === 'Enter') $('go').click(); }; // no return value: returning false would block every other key
 
+// How this call records your mic, for what the settings can change during it: 'browser' (Windows: mic and speaker),
+// 'native' (Android with headphones, nativeMic: the mic) or 'callmode' (Android on the phone: the speaker, route()).
+let micPath, rawMic;
+
+// Settings changed during a call: the new mic replaces the old one in the call, filter and mute state included.
+async function swapMic() {
+  const old = local.getAudioTracks()[0];
+  let raw;
+  try {
+    raw = micPath === 'native' ? await nativeMic() // restarts the app's mic on the chosen one
+      : (await navigator.mediaDevices.getUserMedia({ audio: Object.assign({}, mic, pref('rxMic') && { deviceId: pref('rxMic') }) })).getAudioTracks()[0];
+  } catch { return; } // can't open it: keep the current mic
+  if (!raw) return;
+  const t = await voiceFilter(raw);
+  if (old) { t.enabled = old.enabled; local.removeTrack(old); }
+  local.addTrack(t);
+  const sender = call && call.peerConnection && call.peerConnection.getSenders().find(s => s.track && s.track.kind === 'audio');
+  sender && sender.replaceTrack(t);
+  rawMic && rawMic.stop(); // the old mic (and the old filter's timers, which stop with it)
+  rawMic = raw;
+}
+
 async function startMedia() {
   // Android app with headphones: only the camera comes from here, the mic from the app (nativeMic), which keeps
   // Bluetooth headphones in their good-sound profile. On the loudspeaker the WebView's own mic: it puts the phone in
@@ -344,6 +369,7 @@ async function startMedia() {
   // The speaker chosen in the settings counts too (RxAudio.ownMic).
   // shortcut: decided when the call starts; plugging headphones in mid-call keeps the choice until the next call.
   const app = window.RxAudio && RxAudio.ownMic(pref('rxSpk'));
+  micPath = app ? 'native' : window.RxAudio ? 'callmode' : 'browser';
   if (window.RxAudio && RxAudio.phoneSpeaker(pref('rxSpk'))) speakerOut = await nativeSpeaker();
   // ideal, not exact: cameras that can't do 720p30 still open at their best
   const video = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } };
@@ -354,7 +380,7 @@ async function startMedia() {
   }
   if (app) { const t = await nativeMic(); t && local.addTrack(t); }
   else if (window.RxAudio) RxAudio.route(pref('rxSpk')); // call mode is on now: phone speaker or earpiece
-  const raw = local.getAudioTracks()[0];
+  const raw = rawMic = local.getAudioTracks()[0];
   if (raw) { local.removeTrack(raw); local.addTrack(await voiceFilter(raw)); }
   camTrack = local.getVideoTracks()[0];
   camTrack && tameLights(camTrack);
@@ -384,8 +410,9 @@ function hifi(sdp) {
 console.assert(hifi('a=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=1\r\n') ===
   'a=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;stereo=1;sprop-stereo=1;maxaveragebitrate=128000;useinbandfec=1\r\n', 'hifi');
 const callOpts = { sdpTransform: hifi };
-// noiseSuppression off: voiceFilter's RNNoise does it better (it turns the browser's back on if it can't load).
-const mic = { echoCancellation: true, noiseSuppression: false, autoGainControl: true, sampleRate: 48000 };
+// noiseSuppression and autoGainControl off: voiceFilter does both better (RNNoise, and a level control that doesn't
+// keep moving the Windows mic volume, which pumps). It turns the browser's back on if it can't load.
+const mic = { echoCancellation: true, noiseSuppression: false, autoGainControl: false, sampleRate: 48000 };
 
 function join(room, n) {
   me = slotId(room, n); other = slotId(room, 3 - n);
@@ -432,13 +459,16 @@ function dial() {
   attach(c);
 }
 
-// Video up to 4 Mbps (browsers stop around 2.5 by default): more detail when the connection allows it.
+// Video up to 4 Mbps (browsers stop around 2.5 by default): more detail when the connection allows it. Voice at
+// Opus's full 128 kbps and high priority: on a weak connection the picture gives way before your voice does.
 function sharpen(pc) {
   for (const s of pc ? pc.getSenders() : []) {
-    if (!s.track || s.track.kind !== 'video') continue;
+    if (!s.track) continue;
     const p = s.getParameters();
     if (!p.encodings || !p.encodings.length) continue;
-    p.encodings[0].maxBitrate = 4e6;
+    const audio = s.track.kind === 'audio';
+    p.encodings[0].maxBitrate = audio ? 128000 : 4e6;
+    if (audio) { p.encodings[0].priority = 'high'; p.encodings[0].networkPriority = 'high'; }
     s.setParameters(p).catch(() => {});
   }
 }
@@ -666,7 +696,7 @@ async function voiceFilter(track) {
     node = node.connect(rnnoise).connect(gate).connect(highpass);
   } catch (e) {
     console.warn('voice filter unavailable, using the browser noise suppression', e);
-    track.applyConstraints({ ...mic, noiseSuppression: true }).catch(() => {});
+    track.applyConstraints({ ...mic, noiseSuppression: true, autoGainControl: true }).catch(() => {});
   }
   const agc = c.createGain(), limiter = c.createDynamicsCompressor(), meter = c.createAnalyser();
   limiter.threshold.value = -2; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.002; limiter.release.value = 0.1;
@@ -787,6 +817,53 @@ function showSelf(track) {
   }
 }
 
+// Screen sharing with your camera in the bottom-right corner, as one picture (a call carries one video track).
+// Redrawn whenever the screen or the camera has a new frame (up to 30 a second): a still screen sends almost no
+// frames, and your face should keep moving. Frame-driven, not timers, so it keeps going while the app is in the
+// background, which is when you're showing another window. Without a webcam, or without these browser features,
+// it's just the screen.
+function withCam(screen) {
+  if ($('cam').disabled || !window.MediaStreamTrackProcessor || !window.MediaStreamTrackGenerator) return screen;
+  const out = new MediaStreamTrackGenerator({ kind: 'video' }), writer = out.writable.getWriter();
+  const canvas = new OffscreenCanvas(2, 2), g = canvas.getContext('2d');
+  const cam = camTrack.clone(); // its own copy, stopped at the end without touching your camera
+  let scr, face, last = 0, ended = false;
+  const draw = () => {
+    const now = performance.now();
+    if (!scr || ended || now - last < 33 || out.readyState === 'ended') return;
+    last = now;
+    const w = scr.displayWidth, h = scr.displayHeight;
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    g.drawImage(scr, 0, 0, w, h);
+    if (face && camTrack.enabled) {
+      const fw = Math.round(w * 0.2), fh = Math.round(fw * face.displayHeight / face.displayWidth), m = Math.round(w * 0.015);
+      const x = w - fw - m, y = h - fh - m, r = Math.round(fw * 0.08);
+      g.save(); g.beginPath(); g.roundRect(x, y, fw, fh, r); g.clip();
+      g.drawImage(face, x, y, fw, fh);
+      g.restore();
+      g.lineWidth = Math.max(2, w / 640); g.strokeStyle = '#ffffff66';
+      g.beginPath(); g.roundRect(x, y, fw, fh, r); g.stroke();
+    }
+    writer.write(new VideoFrame(canvas, { timestamp: Math.round(now * 1000) })).catch(() => {});
+  };
+  const pump = async (track, keep) => {
+    const reader = new MediaStreamTrackProcessor({ track }).readable.getReader();
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      keep(value);
+      draw();
+    }
+  };
+  pump(cam, f => { if (ended) return f.close(); face && face.close(); face = f; });
+  pump(screen, f => { scr && scr.close(); scr = f; }).finally(() => { // sharing stopped
+    ended = true;
+    cam.stop(); writer.close().catch(() => {});
+    scr && scr.close(); face && face.close();
+  });
+  return out;
+}
+
 function sendVideo(track) {
   const sender = call && call.peerConnection && call.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
   sender && sender.replaceTrack(track);
@@ -817,12 +894,12 @@ $('screen').onclick = async () => {
   if (screenTrack) return stopScreen();
   try { screenTrack = (await navigator.mediaDevices.getDisplayMedia({ video: true })).getVideoTracks()[0]; } catch { return; }
   screenTrack.onended = stopScreen; // user pressed the browser's own "Stop sharing"
-  sendVideo(screenTrack);
+  sendVideo(withCam(screenTrack));
   setBtn($('screen'), 'screen', 'Stop sharing', 'on');
 };
 function stopScreen() {
   if (!screenTrack) return;
-  screenTrack.stop(); screenTrack = null;
+  screenTrack.stop(); screenTrack = null; // also ends withCam's picture
   sendVideo(camTrack);
   setBtn($('screen'), 'screen', 'Share screen', '');
 }
@@ -840,7 +917,9 @@ function pref(k) { try { return localStorage.getItem(k) || ''; } catch { return 
 function fill(sel, list, cur) {
   sel.replaceChildren(new Option(window.RxAudio ? 'Automatic' : 'Default', ''), ...list.filter(d => d.id && d.id !== 'default').map(d => new Option(d.name, d.id, false, d.id === cur)));
 }
-$('gear').onclick = async () => {
+$('callGear').onclick = () => { sound.click(); openSettings(); };
+$('gear').onclick = () => openSettings();
+async function openSettings() {
   let ins, outs = [];
   if (window.RxAudio) { ins = JSON.parse(RxAudio.inputs()); outs = JSON.parse(RxAudio.outputs()); }
   else {
@@ -855,16 +934,27 @@ $('gear').onclick = async () => {
   fill($('micSel'), ins, pref('rxMic'));
   fill($('spkSel'), outs, pref('rxSpk'));
   $('spkRow').hidden = !outs.length || !(window.RxAudio || 'setSinkId' in HTMLMediaElement.prototype);
+  // In a call, only what can switch on the spot (see micPath).
+  if (micPath) {
+    $('micSel').parentElement.hidden = micPath === 'callmode';
+    if (micPath === 'native') $('spkRow').hidden = true;
+  }
   $('set').hidden = false;
-};
+}
 const keep = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
-$('micSel').onchange = e => keep('rxMic', e.target.value);
-$('spkSel').onchange = e => { keep('rxSpk', e.target.value); audioCtx && toSpeaker(audioCtx); };
+$('micSel').onchange = e => { keep('rxMic', e.target.value); micPath && swapMic(); };
+$('spkSel').onchange = e => {
+  keep('rxSpk', e.target.value);
+  audioCtx && toSpeaker(audioCtx); toSpeaker($('remote'));
+  if (micPath === 'callmode') RxAudio.route(e.target.value);
+};
 $('setDone').onclick = () => { $('set').hidden = true; };
 
-const native = window.RxNative ? { check: () => RxNative.check(), install: () => RxNative.install() }
-  : window.__TAURI__ ? { check: () => __TAURI__.core.invoke('check_update'), install: () => __TAURI__.core.invoke('install_update') }
+const native = window.RxNative ? { check: () => RxNative.check(), install: () => RxNative.install(), version: async () => RxNative.version() }
+  : window.__TAURI__ ? { check: () => __TAURI__.core.invoke('check_update'), install: () => __TAURI__.core.invoke('install_update'), version: () => __TAURI__.core.invoke('version') }
   : null;
+// The version at the bottom of the settings.
+(native ? native.version().then(v => 'rxConnect v' + v, () => 'rxConnect') : Promise.resolve('rxConnect, web version')).then(t => { $('ver').textContent = t; });
 function updBox(text, pct) {
   $('upd').hidden = false;
   $('updText').textContent = text;

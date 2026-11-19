@@ -36,6 +36,12 @@ fn js(window: &WebviewWindow, code: String) {
     let _ = window.eval(&code);
 }
 
+/// This app's version for the settings: the release number N, or "dev" for a local build.
+#[tauri::command]
+pub fn version() -> String {
+    current().map_or("dev".into(), |v| v.to_string())
+}
+
 #[tauri::command]
 pub fn check_update(window: WebviewWindow) {
     std::thread::spawn(move || match newer() {

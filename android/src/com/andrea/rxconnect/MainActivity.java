@@ -128,6 +128,15 @@ public class MainActivity extends Activity {
 
     /** What the page can call as RxNative.*; these run on a binder thread, so the network work goes to its own. */
     class Bridge {
+        /** This app's version (the release number N, see build.sh), for the settings. */
+        @JavascriptInterface public String version() {
+            try {
+                return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            } catch (PackageManager.NameNotFoundException e) {
+                return "?";
+            }
+        }
+
         @JavascriptInterface public void check() {
             new Thread(() -> {
                 try {
@@ -361,7 +370,10 @@ public class MainActivity extends Activity {
     void route(String out) {
         int type = out.equals("speaker") ? AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
                 : out.equals("earpiece") ? AudioDeviceInfo.TYPE_BUILTIN_EARPIECE : -1;
-        if (type < 0) return; // automatic / headphones: the phone's own routing
+        if (type < 0) { // automatic / headphones: the phone's own routing (in a call, switching back from a choice)
+            unroute();
+            return;
+        }
         AudioManager am = getSystemService(AudioManager.class);
         if (Build.VERSION.SDK_INT >= 31) {
             for (AudioDeviceInfo d : am.getAvailableCommunicationDevices())

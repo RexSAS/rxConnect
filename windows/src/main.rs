@@ -5,7 +5,7 @@ mod update;
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![update::check_update, update::install_update])
+        .invoke_handler(tauri::generate_handler![update::check_update, update::install_update, update::version])
         .run(tauri::generate_context!())
         .expect("rxConnect failed to start");
 }
