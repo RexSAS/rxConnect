@@ -48,6 +48,8 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient() {
             @Override public void onPageStarted(WebView v, String url, android.graphics.Bitmap icon) { // left the call (page reload)
                 stopMic();
+                stopSpeaker();
+                unroute();
                 calling = false;
                 stopService(new Intent(MainActivity.this, CallService.class));
             }
@@ -181,17 +183,47 @@ public class MainActivity extends Activity {
             return list.toString();
         }
 
-        /** Sound goes to headphones (Bluetooth, wired or USB), so the phone speaker can't echo into the mic. */
-        @JavascriptInterface public boolean headphones() {
-            for (AudioDeviceInfo d : getSystemService(AudioManager.class).getDevices(AudioManager.GET_DEVICES_OUTPUTS))
-                switch (d.getType()) {
-                    case AudioDeviceInfo.TYPE_BLUETOOTH_A2DP: case AudioDeviceInfo.TYPE_WIRED_HEADPHONES:
-                    case AudioDeviceInfo.TYPE_WIRED_HEADSET: case AudioDeviceInfo.TYPE_USB_HEADSET:
-                    case 26 /* TYPE_BLE_HEADSET, Android 12+ */:
-                        return true;
-                }
-            return false;
+        /**
+         * Whether the page should use the app's own mic (nativeMic) for this call, given the speaker chosen in the
+         * settings ("" automatic, "speaker", "earpiece" or "headphones"): yes when sound goes to headphones, which
+         * keeps Bluetooth ones in their good-sound profile and can't echo. Speaker and earpiece need the WebView mic,
+         * whose call mode gives the phone's echo cancelling the sound and lets route() pick the speaker.
+         */
+        @JavascriptInterface public boolean ownMic(String out) {
+            return !out.equals("earpiece") && headphonesName() != null;
         }
+
+        /**
+         * "Phone speaker" chosen while Bluetooth (or other headphones) is connected: her voice plays on the phone
+         * (Player, through startSpeaker) and other apps' music stays on the Bluetooth speaker. Also implies ownMic.
+         */
+        @JavascriptInterface public boolean phoneSpeaker(String out) {
+            return out.equals("speaker") && headphonesName() != null;
+        }
+
+        /** Starts Player; its port reaches the page posted as a "speaker" message. */
+        @JavascriptInterface public void startSpeaker() { runOnUiThread(MainActivity.this::startSpeaker); }
+
+        /** The speakers the settings offer, as JSON [{id, name}]; the id comes back through ownMic and route. */
+        @JavascriptInterface public String outputs() {
+            org.json.JSONArray list = new org.json.JSONArray();
+            try {
+                list.put(new JSONObject().put("id", "speaker").put("name", "Phone speaker"));
+                for (AudioDeviceInfo d : getSystemService(AudioManager.class).getDevices(AudioManager.GET_DEVICES_OUTPUTS))
+                    if (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE) {
+                        list.put(new JSONObject().put("id", "earpiece").put("name", "Earpiece"));
+                        break;
+                    }
+                String h = headphonesName();
+                if (h != null) list.put(new JSONObject().put("id", "headphones").put("name", h));
+            } catch (org.json.JSONException e) {
+                throw new IllegalStateException(e);
+            }
+            return list.toString();
+        }
+
+        /** In a call on the WebView mic (call mode): sends the sound to the chosen phone speaker or earpiece. */
+        @JavascriptInterface public void route(String out) { runOnUiThread(() -> MainActivity.this.route(out)); }
 
         @JavascriptInterface public void stopMic() { runOnUiThread(MainActivity.this::stopMic); }
 
@@ -261,7 +293,8 @@ public class MainActivity extends Activity {
         musicBefore = v;
         musicDuring = v - 2;
         am.setStreamVolume(AudioManager.STREAM_MUSIC, musicDuring, 0);
-        js("window.rxVoiceBoost && rxVoiceBoost(" + boost(am, v, musicDuring) + ")");
+        // Not when her voice plays on the phone speaker (Player): the drop is on the Bluetooth music, not her.
+        if (player == null) js("window.rxVoiceBoost && rxVoiceBoost(" + boost(am, v, musicDuring) + ")");
     }
 
     void restoreOthers(AudioManager am) {
@@ -296,12 +329,64 @@ public class MainActivity extends Activity {
         if (a != null) a.js(why == null ? "rxUpdate.cancel()" : "rxUpdate.failed(" + JSONObject.quote(why) + ")");
     }
 
+    /** Name of the connected headphones (Bluetooth, wired or USB), or null: sound goes to the phone itself. */
+    String headphonesName() {
+        for (AudioDeviceInfo d : getSystemService(AudioManager.class).getDevices(AudioManager.GET_DEVICES_OUTPUTS))
+            switch (d.getType()) {
+                case AudioDeviceInfo.TYPE_BLUETOOTH_A2DP: case 26 /* TYPE_BLE_HEADSET, Android 12+ */:
+                case AudioDeviceInfo.TYPE_USB_HEADSET:
+                    return d.getProductName().length() > 0 ? d.getProductName().toString() : "Headphones";
+                case AudioDeviceInfo.TYPE_WIRED_HEADPHONES: case AudioDeviceInfo.TYPE_WIRED_HEADSET:
+                    return "Wired headphones";
+            }
+        return null;
+    }
+
+    Player player;
+
+    void startSpeaker() {
+        stopSpeaker();
+        WebMessagePort[] ports = web.createWebMessageChannel();
+        player = new Player(getSystemService(AudioManager.class), ports[0]);
+        web.postWebMessage(new WebMessage("speaker", new WebMessagePort[] {ports[1]}), Uri.parse("https://" + HOST));
+    }
+
+    void stopSpeaker() {
+        if (player != null) player.stop();
+        player = null;
+    }
+
+    boolean routed;
+
+    void route(String out) {
+        int type = out.equals("speaker") ? AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                : out.equals("earpiece") ? AudioDeviceInfo.TYPE_BUILTIN_EARPIECE : -1;
+        if (type < 0) return; // automatic / headphones: the phone's own routing
+        AudioManager am = getSystemService(AudioManager.class);
+        if (Build.VERSION.SDK_INT >= 31) {
+            for (AudioDeviceInfo d : am.getAvailableCommunicationDevices())
+                if (d.getType() == type) routed = am.setCommunicationDevice(d);
+        } else {
+            am.setSpeakerphoneOn(type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER);
+            routed = true;
+        }
+    }
+
+    void unroute() {
+        if (!routed) return;
+        AudioManager am = getSystemService(AudioManager.class);
+        if (Build.VERSION.SDK_INT >= 31) am.clearCommunicationDevice(); else am.setSpeakerphoneOn(false);
+        routed = false;
+    }
+
     void js(String code) { runOnUiThread(() -> web.evaluateJavascript(code, null)); }
 
     @Override protected void onDestroy() {
         if (onScreen == this) onScreen = null;
         duck(false);
         stopMic();
+        stopSpeaker();
+        unroute();
         stopService(new Intent(this, CallService.class));
         web.destroy();
         super.onDestroy();

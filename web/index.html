@@ -341,8 +341,10 @@ async function startMedia() {
   // Android app with headphones: only the camera comes from here, the mic from the app (nativeMic), which keeps
   // Bluetooth headphones in their good-sound profile. On the loudspeaker the WebView's own mic: it puts the phone in
   // call mode, the only way its echo cancelling hears what the speaker plays (else she hears herself back).
+  // The speaker chosen in the settings counts too (RxAudio.ownMic).
   // shortcut: decided when the call starts; plugging headphones in mid-call keeps the choice until the next call.
-  const app = window.RxAudio && RxAudio.headphones();
+  const app = window.RxAudio && RxAudio.ownMic(pref('rxSpk'));
+  if (window.RxAudio && RxAudio.phoneSpeaker(pref('rxSpk'))) speakerOut = await nativeSpeaker();
   // ideal, not exact: cameras that can't do 720p30 still open at their best
   const video = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } };
   const audio = window.RxAudio ? mic : Object.assign({}, mic, pref('rxMic') && { deviceId: pref('rxMic') }); // Android ids are the app's
@@ -351,6 +353,7 @@ async function startMedia() {
     try { local = Object.keys(o).length ? await navigator.mediaDevices.getUserMedia(o) : new MediaStream(); break; } catch {}
   }
   if (app) { const t = await nativeMic(); t && local.addTrack(t); }
+  else if (window.RxAudio) RxAudio.route(pref('rxSpk')); // call mode is on now: phone speaker or earpiece
   const raw = local.getAudioTracks()[0];
   if (raw) { local.removeTrack(raw); local.addTrack(await voiceFilter(raw)); }
   camTrack = local.getVideoTracks()[0];
@@ -504,8 +507,8 @@ function duck(on) { window.RxAudio && RxAudio.callActive(on); }
 // holds it, so a muted, never-played <audio> holds it (paused elements don't take focus).
 let audioCtx, voice;
 const ctx = () => audioCtx || toSpeaker(audioCtx = new AudioContext({ sampleRate: 48000 }));
-// Chosen speaker (Windows); Android WebView can't pick one, so the phone routes as usual.
-function toSpeaker(el) { el.setSinkId && el.setSinkId(pref('rxSpk')).catch(() => {}); return el; } // '' = default
+// Chosen speaker on Windows. On Android the app routes it (RxAudio.route), so this does nothing there.
+function toSpeaker(el) { !window.RxAudio && el.setSinkId && el.setSinkId(pref('rxSpk')).catch(() => {}); return el; } // '' = default
 
 // Android app: the app records the mic itself (android Mic.java; WebView's own mic would switch Bluetooth headphones
 // to their call profile). 20 ms chunks of 16-bit PCM arrive as base64 on a message port that goes straight to this
@@ -539,6 +542,38 @@ registerProcessor('pcm', class extends AudioWorkletProcessor {
     return true;
   }
 });`;
+// Android, "Phone speaker" with Bluetooth connected: her voice goes to the app (android Player.java), which plays it on
+// the phone while other apps' music stays on Bluetooth. The reverse of nativeMic: 20 ms base64 PCM chunks on a port.
+const PCM_OUT_WORKLET = `
+const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+function encode(b) { // b.length is a multiple of 3 (1920 bytes), so no padding
+  let s = '';
+  for (let i = 0; i < b.length; i += 3) { const n = b[i] << 16 | b[i + 1] << 8 | b[i + 2]; s += A[n >> 18] + A[n >> 12 & 63] + A[n >> 6 & 63] + A[n & 63]; }
+  return s;
+}
+registerProcessor('pcm-out', class extends AudioWorkletProcessor {
+  constructor() { super(); this.buf = new Int16Array(960); this.n = 0; this.port.onmessage = e => this.out = e.data; }
+  process([[x]]) {
+    for (let i = 0; x && this.out && i < x.length; i++) {
+      this.buf[this.n++] = Math.max(-1, Math.min(1, x[i])) * 32767;
+      if (this.n === 960) { this.out.postMessage(encode(new Uint8Array(this.buf.buffer))); this.n = 0; }
+    }
+    return true;
+  }
+});`;
+let speakerOut;
+async function nativeSpeaker() {
+  const port = new Promise(resolve => addEventListener('message', function got(e) {
+    if (e.data === 'speaker' && e.ports[0]) { removeEventListener('message', got); resolve(e.ports[0]); }
+  }));
+  RxAudio.startSpeaker();
+  await ctx().audioWorklet.addModule(URL.createObjectURL(new Blob([PCM_OUT_WORKLET], { type: 'text/javascript' })));
+  const node = new AudioWorkletNode(audioCtx, 'pcm-out', { numberOfOutputs: 0, channelCount: 1, channelCountMode: 'explicit' });
+  const p = await port;
+  node.port.postMessage(p, [p]);
+  return node;
+}
+
 async function nativeMic() {
   const port = new Promise(resolve => addEventListener('message', function got(e) {
     if (e.data === 'mic' && e.ports[0]) { removeEventListener('message', got); resolve(e.ports[0]); }
@@ -582,26 +617,53 @@ function tameLights(track) {
 
 // Discord-style filter on your voice before it's sent:
 // 1. RNNoise, AI noise removal like Discord's Krisp: hiss, fans, keyboard, traffic.
-// 2. A gate that silences the gaps between your words, which also cuts any leftover echo of her voice.
+// 2. A soft gate (SOFT_GATE) that turns the gaps between your words down 30 dB, which also cuts any leftover echo
+//    of her voice. It fades in 5 ms and out 150 ms, so words aren't clipped and pauses don't sound cut off.
+// 2b. A gentle 80 Hz high-pass: no rumble or "p" pops.
 // 3. Automatic level: measures your voice while you speak and steers it to a steady loudness (up to +15 dB, down to
 //    -6), then a limiter keeps peaks clean. After the noise removal and gate, so silence and hiss never move it.
-// RNNoise and the gate are vendored in web/vendor/rnnoise (see its README).
+// RNNoise is vendored in web/vendor/rnnoise (see its README).
 const VENDOR = 'vendor/rnnoise/';
+const SOFT_GATE = `
+registerProcessor('soft-gate', class extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    const t = s => 1 - Math.exp(-1 / (s * sampleRate)); // one-pole smoothing for a time constant of s seconds
+    this.up = t(0.005); this.down = t(0.15); this.fall = Math.exp(-1 / (0.05 * sampleRate));
+    this.holdN = 0.25 * sampleRate; this.env = 0; this.g = 0.03; this.hold = 0;
+  }
+  process([[x]], [[y]]) {
+    if (!x) return true;
+    for (let i = 0; i < x.length; i++) {
+      const a = Math.abs(x[i]);
+      this.env = a > this.env ? a : this.env * this.fall; // peak envelope, 50 ms decay
+      if (this.env > 0.012) this.hold = this.holdN; // opens above about -38 dB
+      else if (this.env < 0.004 && this.hold > 0) this.hold--; // closes 250 ms after dropping under about -48 dB
+      const target = this.hold > 0 ? 1 : 0.03; // closed = -30 dB, not dead silence
+      this.g += (target - this.g) * (target > this.g ? this.up : this.down);
+      y[i] = x[i] * this.g;
+    }
+    return true;
+  }
+});`;
 async function voiceFilter(track) {
   const c = ctx();
   let node = c.createMediaStreamSource(new MediaStream([track]));
   try {
     // Worklets go through blob URLs: the Android app serves assets without a JavaScript MIME type, which addModule needs.
-    const load = async f => c.audioWorklet.addModule(URL.createObjectURL(new Blob([await (await fetch(VENDOR + f)).text()], { type: 'text/javascript' })));
+    const module = code => c.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: 'text/javascript' })));
+    const load = async f => module(await (await fetch(VENDOR + f)).text());
     // shortcut: SIMD build only (every Chromium since 91: WebView2, Android WebView); add rnnoise.wasm if an old one shows up.
     const [wasmBinary] = await Promise.all([
       fetch(VENDOR + 'rnnoise_simd.wasm').then(r => { if (!r.ok) throw Error('rnnoise ' + r.status); return r.arrayBuffer(); }),
-      load('rnnoise.js'), load('gate.js'),
+      load('rnnoise.js'), module(SOFT_GATE),
     ]);
     const mono = { channelCount: 1, channelCountMode: 'explicit', outputChannelCount: [1] };
     const rnnoise = new AudioWorkletNode(c, '@sapphi-red/web-noise-suppressor/rnnoise', { ...mono, processorOptions: { maxChannels: 1, wasmBinary } });
-    const gate = new AudioWorkletNode(c, '@sapphi-red/web-noise-suppressor/noise-gate', { ...mono, processorOptions: { openThreshold: -40, closeThreshold: -50, holdMs: 250, maxChannels: 1 } });
-    node = node.connect(rnnoise).connect(gate);
+    const gate = new AudioWorkletNode(c, 'soft-gate', mono);
+    const highpass = Object.assign(c.createBiquadFilter(), { type: 'highpass' });
+    highpass.frequency.value = 80;
+    node = node.connect(rnnoise).connect(gate).connect(highpass);
   } catch (e) {
     console.warn('voice filter unavailable, using the browser noise suppression', e);
     track.applyConstraints({ ...mic, noiseSuppression: true }).catch(() => {});
@@ -609,6 +671,24 @@ async function voiceFilter(track) {
   const agc = c.createGain(), limiter = c.createDynamicsCompressor(), meter = c.createAnalyser();
   limiter.threshold.value = -2; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.002; limiter.release.value = 0.1;
   meter.fftSize = 2048;
+  // Phone speaker without call mode has no echo cancelling: while she talks, your mic goes down 26 dB so her voice
+  // can't come back to her (half duplex, like an old speakerphone: talking over her doesn't get through).
+  const duplex = c.createGain();
+  node = node.connect(duplex);
+  if (speakerOut) {
+    const far = new Float32Array(1024);
+    let until = 0;
+    const t = setInterval(() => {
+      if (track.readyState === 'ended') return clearInterval(t);
+      if (!farMeter) return;
+      farMeter.getFloatTimeDomainData(far);
+      let sum = 0;
+      for (const x of far) sum += x * x;
+      if (10 * Math.log10(sum / far.length + 1e-12) > -45) until = performance.now() + 200; // and 200 ms of room echo after
+      const talking = performance.now() < until;
+      duplex.gain.setTargetAtTime(talking ? 0.05 : 1, c.currentTime, talking ? 0.005 : 0.05);
+    }, 20);
+  }
   node.connect(meter);
   const out = c.createMediaStreamDestination();
   node.connect(agc).connect(limiter).connect(out);
@@ -621,8 +701,8 @@ async function voiceFilter(track) {
     for (const x of buf) sum += x * x;
     const db = 10 * Math.log10(sum / buf.length + 1e-12);
     if (db < -40) return; // not speaking (or only a whisper of echo): keep the gain as it is
-    level += (db - level) * 0.15; // ~0.7 s average of your speaking level
-    agc.gain.setTargetAtTime(10 ** (Math.max(-6, Math.min(15, -16 - level)) / 20), c.currentTime, 0.3);
+    level += (db - level) * 0.08; // ~1.2 s average of your speaking level: steady, no pumping between words
+    agc.gain.setTargetAtTime(10 ** (Math.max(-6, Math.min(15, -16 - level)) / 20), c.currentTime, 0.6);
   }, 100);
   c.resume();
   return out.stream.getAudioTracks()[0];
@@ -630,14 +710,16 @@ async function voiceFilter(track) {
 
 // Her voice's volume: the app turns media volume down during a call (to make other apps quieter) and boosts her by
 // the same amount here; the limiter keeps the boost from distorting.
-let voiceGain;
+let voiceGain, farMeter;
 function voiceOut() {
   if (!voiceGain) {
     voiceGain = audioCtx.createGain();
     const limiter = audioCtx.createDynamicsCompressor();
     limiter.threshold.value = -3; limiter.knee.value = 0; limiter.ratio.value = 20;
     limiter.attack.value = 0.003; limiter.release.value = 0.25;
-    voiceGain.connect(limiter).connect(audioCtx.destination);
+    voiceGain.connect(limiter).connect(speakerOut || audioCtx.destination);
+    farMeter = audioCtx.createAnalyser(); farMeter.fftSize = 1024;
+    limiter.connect(farMeter);
   }
   return voiceGain;
 }
@@ -756,11 +838,11 @@ addEventListener('pagehide', () => { call && call.close(); peer && peer.destroy(
 // Audio settings (gear on the home screen): choices are remembered and used on the next call.
 function pref(k) { try { return localStorage.getItem(k) || ''; } catch { return ''; } }
 function fill(sel, list, cur) {
-  sel.replaceChildren(new Option('Default', ''), ...list.filter(d => d.id && d.id !== 'default').map(d => new Option(d.name, d.id, false, d.id === cur)));
+  sel.replaceChildren(new Option(window.RxAudio ? 'Automatic' : 'Default', ''), ...list.filter(d => d.id && d.id !== 'default').map(d => new Option(d.name, d.id, false, d.id === cur)));
 }
 $('gear').onclick = async () => {
   let ins, outs = [];
-  if (window.RxAudio) ins = JSON.parse(RxAudio.inputs());
+  if (window.RxAudio) { ins = JSON.parse(RxAudio.inputs()); outs = JSON.parse(RxAudio.outputs()); }
   else {
     let list = await navigator.mediaDevices.enumerateDevices();
     if (!list.some(d => d.label)) { // names stay hidden until the mic was allowed once
@@ -772,7 +854,7 @@ $('gear').onclick = async () => {
   }
   fill($('micSel'), ins, pref('rxMic'));
   fill($('spkSel'), outs, pref('rxSpk'));
-  $('spkRow').hidden = !outs.length || !('setSinkId' in HTMLMediaElement.prototype);
+  $('spkRow').hidden = !outs.length || !(window.RxAudio || 'setSinkId' in HTMLMediaElement.prototype);
   $('set').hidden = false;
 };
 const keep = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
