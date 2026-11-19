@@ -6,7 +6,6 @@ import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.media.audiofx.AcousticEchoCanceler;
-import android.media.audiofx.AutomaticGainControl;
 import android.media.audiofx.NoiseSuppressor;
 import android.util.Base64;
 import java.util.function.Consumer;
@@ -41,8 +40,11 @@ final class Mic {
     /** {@code device}: an AudioDeviceInfo id from the settings; "" or unplugged means the built-in mic. */
     Mic(AudioManager am, String device, Consumer<String> out) {
         int min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
-        // VOICE_COMMUNICATION: the source the phone's own echo cancelling and noise suppression are tuned for.
-        rec = new AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, RATE, AudioFormat.CHANNEL_IN_MONO,
+        // VOICE_COMMUNICATION is the phone's call processing: it cancels echo from the loudspeaker but sounds dull and
+        // quiet. With headphones there's no echo to cancel, so the clean full-range VOICE_RECOGNITION source is used.
+        // shortcut: chosen when the mic starts; plugging headphones in mid-call keeps the old choice until the next call.
+        boolean call = !headphones(am);
+        rec = new AudioRecord(call ? MediaRecorder.AudioSource.VOICE_COMMUNICATION : MediaRecorder.AudioSource.VOICE_RECOGNITION, RATE, AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT, Math.max(min, CHUNK * 2 * 4));
         if (rec.getState() != AudioRecord.STATE_INITIALIZED) {
             rec.release();
@@ -55,9 +57,9 @@ final class Mic {
         }
         if (pick != null) rec.setPreferredDevice(pick);
         int session = rec.getAudioSessionId();
-        if (AcousticEchoCanceler.isAvailable()) AcousticEchoCanceler.create(session).setEnabled(true);
         if (NoiseSuppressor.isAvailable()) NoiseSuppressor.create(session).setEnabled(true);
-        if (AutomaticGainControl.isAvailable()) AutomaticGainControl.create(session).setEnabled(true);
+        if (call && AcousticEchoCanceler.isAvailable()) AcousticEchoCanceler.create(session).setEnabled(true);
+        // No AutomaticGainControl: the page levels the voice itself (leveler in index.html), more evenly.
         rec.startRecording();
         thread = new Thread(() -> {
             short[] pcm = new short[CHUNK];
@@ -78,4 +80,16 @@ final class Mic {
     }
 
     void stop() { on = false; }
+
+    /** Sound goes to headphones (Bluetooth, wired or USB), so the phone speaker can't echo into the mic. */
+    static boolean headphones(AudioManager am) {
+        for (AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_OUTPUTS))
+            switch (d.getType()) {
+                case AudioDeviceInfo.TYPE_BLUETOOTH_A2DP: case AudioDeviceInfo.TYPE_WIRED_HEADPHONES:
+                case AudioDeviceInfo.TYPE_WIRED_HEADSET: case AudioDeviceInfo.TYPE_USB_HEADSET:
+                case 26 /* TYPE_BLE_HEADSET, Android 12+ */:
+                    return true;
+            }
+        return false;
+    }
 }

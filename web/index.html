@@ -46,7 +46,7 @@
   /* ---------- Call screen ---------- */
   #call { display:none; position:fixed; inset:0; background:#000; animation:fade .4s ease both; }
   @keyframes fade { from { opacity:0; } }
-  #remote { width:100%; height:100%; object-fit:cover; filter:contrast(1.06) saturate(1.12) brightness(1.03); opacity:0; transform:scale(1.03); transition:opacity .6s ease, transform .8s var(--ease); }
+  #remote { width:100%; height:100%; object-fit:cover; opacity:0; transform:scale(1.03); transition:opacity .6s ease, transform .8s var(--ease); }
   .live #remote { opacity:1; transform:none; }
 
   #waiting { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:28px; padding:16px; text-align:center; background:radial-gradient(circle at 50% 45%, #1c1420 0%, #000 70%); animation:fade .5s ease both; }
@@ -57,9 +57,12 @@
   .face video.mirror { transform:scaleX(-1); }
   .face.empty { display:grid; place-items:center; background:transparent; border:2px dashed #ffffff40; box-shadow:none; color:var(--muted); animation:pop .5s var(--ease) .15s both, breathe 2.4s ease-in-out .7s infinite; }
   .face.empty svg { width:34px; height:34px; fill:currentColor; stroke:none; }
-  @keyframes breathe { 50% { transform:scale(1.07); border-color:var(--accent); color:var(--accent-2); } }
-  .dots { width:64px; height:4px; margin:0 8px; background:radial-gradient(circle, var(--accent) 1.6px, transparent 2px) 0 0/10px 4px; animation:flow .8s linear infinite; }
-  @keyframes flow { to { background-position:10px 0; } }
+  /* breathe animates scale only: animating colours restyles and repaints every frame, which stutters on PC */
+  @keyframes breathe { 50% { scale:1.07; } } /* scale, not transform: two transform animations (pop + this) fall back to the main thread */
+  /* The dots slide via transform (GPU), not background-position, which repaints every frame and stutters while the page is busy */
+  .dots { position:relative; width:64px; height:4px; margin:0 8px; overflow:hidden; }
+  .dots::before { content:""; position:absolute; top:0; bottom:0; left:-10px; right:0; background:radial-gradient(circle, var(--accent) 1.6px, transparent 2px) 0 0/10px 4px; animation:flow .8s linear infinite; will-change:transform; }
+  @keyframes flow { to { transform:translateX(10px); } }
   #status { margin:0; color:var(--text); font-size:19px; font-weight:600; }
   #waiting .hint { margin:-18px 0 0; color:var(--muted); font-size:14px; }
 
@@ -344,7 +347,10 @@ async function startMedia() {
     try { local = Object.keys(o).length ? await navigator.mediaDevices.getUserMedia(o) : new MediaStream(); break; } catch {}
   }
   if (app) { const t = await nativeMic(); t && local.addTrack(t); }
+  const raw = local.getAudioTracks()[0];
+  if (raw) { local.removeTrack(raw); local.addTrack(leveler(raw)); }
   camTrack = local.getVideoTracks()[0];
+  camTrack && tameLights(camTrack);
   if (!camTrack) { // no webcam: send a black frame so screen share still has a video track to swap into
     const c = Object.assign(document.createElement('canvas'), { width: 640, height: 480 });
     c.getContext('2d').fillRect(0, 0, 640, 480);
@@ -418,11 +424,33 @@ function dial() {
   attach(c);
 }
 
+// Video up to 4 Mbps (browsers stop around 2.5 by default): more detail when the connection allows it.
+function sharpen(pc) {
+  for (const s of pc ? pc.getSenders() : []) {
+    if (!s.track || s.track.kind !== 'video') continue;
+    const p = s.getParameters();
+    if (!p.encodings || !p.encodings.length) continue;
+    p.encodings[0].maxBitrate = 4e6;
+    s.setParameters(p).catch(() => {});
+  }
+}
+
+// Fill the screen only when her picture has about the screen's shape. Otherwise show it whole: cropping a portrait
+// phone picture to a wide PC window cuts most of it and blows the rest up, which looks blurry.
+function fit() {
+  const v = $('remote');
+  if (!v.videoWidth) return;
+  const r = (v.videoWidth / v.videoHeight) / (innerWidth / innerHeight);
+  v.style.objectFit = r > 0.75 && r < 1.33 ? 'cover' : 'contain';
+}
+$('remote').addEventListener('resize', fit);
+addEventListener('resize', fit);
+
 function attach(c) {
   if (call && call !== c) call.close();
   call = c;
   // The same join / quit sounds as your own, when the other person arrives or leaves (stream can fire twice).
-  c.on('stream', s => { $('call').classList.contains('live') || sound.join(); playRemote(s); setStatus(''); openTell(); });
+  c.on('stream', s => { $('call').classList.contains('live') || sound.join(); playRemote(s); setStatus(''); openTell(); sharpen(c.peerConnection); });
   const gone = () => {
     if (call !== c) return;
     $('call').classList.contains('live') && sound.quit();
@@ -518,6 +546,46 @@ async function nativeMic() {
   const p = await port;
   node.port.postMessage(p, [p]);
   audioCtx.resume();
+  return out.stream.getAudioTracks()[0];
+}
+
+// Bright lights in the picture (a lamp, a window) blow out to white: the camera sets exposure from the average. While
+// much of the picture is clipped, exposure goes down a step (at most 1.5 stops), and back up once it isn't. Only on
+// cameras that let the page set exposure compensation (phones; most PC webcams don't).
+function tameLights(track) {
+  const ec = track.getCapabilities && track.getCapabilities().exposureCompensation;
+  if (!ec || !(ec.max > ec.min)) return;
+  const v = Object.assign(document.createElement('video'), { muted: true, playsInline: true, srcObject: new MediaStream([track]) });
+  v.play().catch(() => {});
+  const c = Object.assign(document.createElement('canvas'), { width: 64, height: 36 }), g = c.getContext('2d', { willReadFrequently: true });
+  const step = Math.max(ec.step || 0, 1 / 3), low = Math.max(ec.min, -1.5);
+  let comp = Math.min(0, track.getSettings().exposureCompensation || 0);
+  const timer = setInterval(() => {
+    if (track.readyState === 'ended') return clearInterval(timer);
+    if (!track.enabled || v.readyState < 2) return;
+    g.drawImage(v, 0, 0, 64, 36);
+    const d = g.getImageData(0, 0, 64, 36).data;
+    let hot = 0;
+    for (let i = 0; i < d.length; i += 4) if (0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2] > 245) hot++;
+    const share = hot / (64 * 36); // 1.5–6% clipped is left alone, so it doesn't flicker between two settings
+    const next = Math.max(low, Math.min(0, share > 0.06 ? comp - step : share < 0.015 ? comp + step : comp));
+    if (next === comp) return;
+    comp = next;
+    track.applyConstraints({ advanced: [{ exposureCompensation: comp }] }).catch(() => {});
+  }, 700);
+}
+
+// Your voice, evened out before it's sent: quiet speech brought up (compressor + gain), peaks kept clean (limiter).
+// Mics often send speech far too quiet, and the other side can only turn everything up, noise included.
+function leveler(track) {
+  const c = ctx(), comp = c.createDynamicsCompressor(), gain = c.createGain(), limiter = c.createDynamicsCompressor();
+  // Speech around -24 dBFS comes out near -14; louder speech is squeezed, the limiter stops anything clipping.
+  comp.threshold.value = -24; comp.knee.value = 6; comp.ratio.value = 3; comp.attack.value = 0.005; comp.release.value = 0.25;
+  gain.gain.value = 3.2; // about +10 dB
+  limiter.threshold.value = -2; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.002; limiter.release.value = 0.1;
+  const out = c.createMediaStreamDestination();
+  c.createMediaStreamSource(new MediaStream([track])).connect(comp).connect(gain).connect(limiter).connect(out);
+  c.resume();
   return out.stream.getAudioTracks()[0];
 }
 
