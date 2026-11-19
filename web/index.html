@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>rxConnect</title>
 <style>
+  /* Room the chat takes beside (PC) or under (phone) the call: everything on the call screen is laid out from these,
+     and they animate, so the call glides aside when the chat opens. */
+  @property --right { syntax:'<length>'; inherits:true; initial-value:0px; }
+  @property --bottom { syntax:'<length>'; inherits:true; initial-value:0px; }
   :root {
     --bg:#0b0c10; --panel:#16181f; --panel-2:#1f222b; --line:#2a2e39;
     --text:#f2f3f7; --muted:#8b91a1; --accent:#e0457b; --accent-2:#ff7aa8;
@@ -52,12 +56,12 @@
   .hint { margin:4px 0 0; color:var(--muted); font-size:13px; }
 
   /* ---------- Call screen ---------- */
-  #call { display:none; position:fixed; inset:0; background:#000; animation:fade .4s ease both; }
+  #call { display:none; position:fixed; inset:0; background:#000; animation:fade .4s ease both; --right:0px; --bottom:0px; transition:--right .45s var(--ease), --bottom .45s var(--ease); }
   @keyframes fade { from { opacity:0; } }
-  #remote { width:100%; height:100%; object-fit:cover; opacity:0; transform:scale(1.03); transition:opacity .6s ease, transform .8s var(--ease); }
+  #remote { position:absolute; left:0; top:0; width:calc(100% - var(--right)); height:calc(100% - var(--bottom)); object-fit:cover; /* a video doesn't stretch to insets: sized explicitly */ opacity:0; transform:scale(1.03); transition:opacity .6s ease, transform .8s var(--ease); }
   .live #remote { opacity:1; transform:none; }
 
-  #waiting { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:28px; padding:16px; text-align:center; background:radial-gradient(circle at 50% 45%, #1c1420 0%, #000 70%); animation:fade .5s ease both; }
+  #waiting { position:absolute; inset:0 var(--right) var(--bottom) 0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:28px; padding:16px; text-align:center; background:radial-gradient(circle at 50% 45%, #1c1420 0%, #000 70%); animation:fade .5s ease both; }
   /* You, a flowing dotted line, and an empty dashed circle that breathes until they arrive. */
   .pair { display:flex; align-items:center; margin-bottom:8px; }
   .face { position:relative; width:112px; height:112px; flex:none; border-radius:50%; overflow:hidden; background:var(--panel-2); border:3px solid #ffffff26; box-shadow:0 12px 30px #0009; animation:pop .5s var(--ease) both; }
@@ -80,28 +84,40 @@
   .live #chip .dot { background:var(--ok); animation:none; }
   @keyframes blink { 50% { opacity:.3; } }
 
-  #me { position:absolute; right:16px; top:calc(16px + env(safe-area-inset-top)); width:min(30vw,220px); aspect-ratio:3/4; border-radius:18px; overflow:hidden; background:var(--panel-2); box-shadow:0 10px 30px #0008; animation:pop .5s var(--ease) .2s both; transition:width .4s var(--ease); }
+  #me { position:absolute; right:calc(16px + var(--right)); top:calc(16px + env(safe-area-inset-top)); width:min(30vw,220px); aspect-ratio:3/4; border-radius:18px; overflow:hidden; background:var(--panel-2); box-shadow:0 10px 30px #0008; animation:pop .5s var(--ease) .2s both; transition:width .4s var(--ease); }
   @media (min-aspect-ratio:1/1) { #me { aspect-ratio:4/3; } }
   @keyframes pop { from { opacity:0; transform:scale(.85); } }
   #local { width:100%; height:100%; object-fit:cover; display:block; }
   #local.mirror { transform:scaleX(-1); }
   /* Your tile in the corner you dragged it to (data-corner, see the drag code): bottom ones above the call buttons, top-left under the timer. */
   #me { touch-action:none; }
+  /* Switch camera (front / back), a glass button on your tile; only with more than one camera. */
+  #flip { position:absolute; right:8px; top:8px; width:34px; height:34px; border-radius:50%; border:1px solid #ffffff38; display:grid; place-items:center; background:#16181f59; backdrop-filter:blur(12px) saturate(1.4); -webkit-backdrop-filter:blur(12px) saturate(1.4); color:#fff; z-index:1; animation:pop .3s var(--ease) both; transition:background .2s, transform .15s var(--ease); }
+  #flip:hover { background:#16181f99; }
+  #flip:active { transform:scale(.9); }
+  #flip svg { width:18px; height:18px; }
+  #flip.turning svg { animation:spin .5s var(--ease); }
+  .swap #flip { top:calc(16px + env(safe-area-inset-top)); right:16px; width:44px; height:44px; }
   #call { user-select:none; -webkit-user-select:none; } /* dragging your tile mustn't select the timer's text */
   #me[data-corner$=l] { left:16px; right:auto; }
+  /* Double-click your tile: minimized to a small one in its corner (scale, so dragging still works); a tap restores it. */
+  #me { transition:width .4s var(--ease), scale .45s var(--ease), border-radius .45s var(--ease); transform-origin:top right; }
+  #me[data-corner=tl] { transform-origin:top left; } #me[data-corner=bl] { transform-origin:bottom left; } #me[data-corner=br] { transform-origin:bottom right; }
+  #me.mini { scale:.34; border-radius:44px; }
+  #me.mini #flip, #me.mini .camoff svg { opacity:0; pointer-events:none; }
   #me[data-corner=tl] { top:calc(64px + env(safe-area-inset-top)); }
-  #me[data-corner^=b] { top:auto; bottom:calc(104px + env(safe-area-inset-bottom)); }
+  #me[data-corner^=b] { top:auto; bottom:calc(104px + var(--bottom) + env(safe-area-inset-bottom)); }
   /* Tap your tile to swap: you full screen as she sees you (not mirrored, not cropped), her in the tile. Tap her to swap back. */
   #me, .swap #remote { cursor:pointer; }
-  .swap #me { inset:0; width:auto; aspect-ratio:auto; border-radius:0; box-shadow:none; background:#000; }
+  .swap #me { inset:0 var(--right) var(--bottom) 0; width:auto; aspect-ratio:auto; border-radius:0; box-shadow:none; background:#000; }
   .swap #local { object-fit:contain; transform:none; }
-  .swap #remote { position:absolute; right:16px; top:calc(16px + env(safe-area-inset-top)); width:min(30vw,220px); height:auto; aspect-ratio:3/4; border-radius:18px; object-fit:cover !important; background:var(--panel-2); box-shadow:0 10px 30px #0008; z-index:2; }
+  .swap #remote { left:auto; bottom:auto; right:calc(16px + var(--right)); top:calc(16px + env(safe-area-inset-top)); width:min(30vw,220px); height:auto; aspect-ratio:3/4; border-radius:18px; object-fit:cover !important; background:var(--panel-2); box-shadow:0 10px 30px #0008; z-index:2; }
   .swap #them .off { display:none; }
   .camoff { position:absolute; inset:0; display:grid; place-items:center; background:var(--panel-2); color:var(--muted); opacity:0; transition:opacity .25s; }
   .nocam .camoff { opacity:1; }
   .pip #chip, .pip #me, .pip #bar, .pip #waiting .hint { display:none; } /* Android floating window: just her */  #call:not(.live) #me { display:none; }
   /* The other person's mute / camera-off, as they sent it (sendState) */
-  #them { position:absolute; inset:0; pointer-events:none; }
+  #them { position:absolute; inset:0 var(--right) var(--bottom) 0; pointer-events:none; }
   #call:not(.live) #them { display:none; }
   #them .off { position:absolute; inset:0; display:grid; place-items:center; background:radial-gradient(circle at 50% 45%, #1c1420 0%, #000 70%); color:var(--muted); opacity:0; transition:opacity .25s; }
   #them .off svg { width:56px; height:56px; }
@@ -109,12 +125,12 @@
   #them .badge { position:absolute; left:50%; top:calc(16px + env(safe-area-inset-top)); display:flex; align-items:center; gap:6px; padding:8px 12px; border-radius:999px; background:var(--danger); color:#fff; font-size:14px; transform:translateX(-50%) scale(0); transition:transform .25s var(--ease); }
   #them .badge svg { width:16px; height:16px; }
   .themMuted #them .badge { transform:translateX(-50%) scale(1); }
-  #toast { position:absolute; left:50%; top:calc(64px + env(safe-area-inset-top)); max-width:calc(100% - 32px); padding:10px 16px; border-radius:999px; background:#16181fe6; border:1px solid #ffb02e66; color:var(--text); font-size:14px; white-space:nowrap; transform:translateX(-50%); animation:drop .4s var(--ease) both; z-index:5; } /* while waiting you're the circle in the middle */
+  #toast { position:absolute; left:calc(50% - var(--right) / 2); top:calc(64px + env(safe-area-inset-top)); max-width:calc(100% - 32px); padding:10px 16px; border-radius:999px; background:#16181fe6; border:1px solid #ffb02e66; color:var(--text); font-size:14px; white-space:nowrap; transform:translateX(-50%); animation:drop .4s var(--ease) both; z-index:5; } /* while waiting you're the circle in the middle */
   #me .badge { position:absolute; left:8px; bottom:8px; width:28px; height:28px; border-radius:50%; display:grid; place-items:center; background:var(--danger); transform:scale(0); transition:transform .25s var(--ease); }
   #me .badge svg { width:16px; height:16px; color:#fff; }
   .muted #me .badge { transform:scale(1); }
 
-  #bar { position:absolute; left:50%; bottom:calc(20px + env(safe-area-inset-bottom)); display:flex; gap:10px; padding:10px; border-radius:999px; background:#16181f59; border:1px solid #ffffff1f; backdrop-filter:blur(24px) saturate(1.4); -webkit-backdrop-filter:blur(24px) saturate(1.4); box-shadow:0 12px 40px #0008; transform:translateX(-50%); animation:slideup .6s var(--ease) .15s both; transition:opacity .35s, transform .35s var(--ease); }
+  #bar { position:absolute; left:calc(50% - var(--right) / 2); bottom:calc(20px + var(--bottom) + env(safe-area-inset-bottom)); display:flex; gap:10px; padding:10px; border-radius:999px; background:#16181f59; border:1px solid #ffffff1f; backdrop-filter:blur(24px) saturate(1.4); -webkit-backdrop-filter:blur(24px) saturate(1.4); box-shadow:0 12px 40px #0008; transform:translateX(-50%); animation:slideup .6s var(--ease) .15s both; transition:opacity .35s, transform .35s var(--ease); }
   @keyframes slideup { from { opacity:0; transform:translate(-50%, 30px); } }
   .ctl { width:52px; height:52px; border:0; border-radius:50%; display:grid; place-items:center; background:#ffffff1a; color:var(--text); transition:background .2s, color .2s, transform .15s var(--ease); }
   .ctl:hover { background:#ffffff2e; }
@@ -138,18 +154,26 @@
   .idle { cursor:none; }
 
   /* ---------- Update dialog ---------- */
-  #upd, #set { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; background:#000b; z-index:10; animation:fade .25s ease both; }
-  #upd .box, #set .box { width:min(360px,100%); background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:22px; animation:pop .35s var(--ease) both; }
-  #upd .head, #set .head { display:flex; align-items:center; gap:12px; }
-  #upd .head .ic, #set .head .ic { width:40px; height:40px; border-radius:12px; display:grid; place-items:center; background:#e0457b22; color:var(--accent-2); }
-  #upd b, #set b { font-size:18px; }
-  #updText { color:var(--muted); margin:14px 0 18px; }
+  #upd, #set, #perm { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; background:#000b; z-index:10; animation:fade .25s ease both; }
+  #upd .box, #set .box, #perm .box { width:min(360px,100%); background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:22px; animation:pop .35s var(--ease) both; }
+  #upd .head, #set .head, #perm .head { display:flex; align-items:center; gap:12px; }
+  #upd .head .ic, #set .head .ic, #perm .head .ic { width:40px; height:40px; border-radius:12px; display:grid; place-items:center; background:#e0457b22; color:var(--accent-2); }
+  #upd b, #set b, #perm b { font-size:18px; }
+  #updText, #permText { color:var(--muted); margin:14px 0 18px; }
   #updBar { height:8px; border-radius:4px; background:var(--panel-2); overflow:hidden; }
   #updBar i { display:block; height:100%; width:0; border-radius:4px; background:linear-gradient(90deg, var(--accent), var(--accent-2)); transition:width .3s ease; }
-  #updBtns { display:flex; gap:10px; justify-content:flex-end; }
+  #updBtns, #permBtns { display:flex; gap:10px; justify-content:flex-end; }
   #gear { position:absolute; right:calc(16px + env(safe-area-inset-right)); top:calc(16px + env(safe-area-inset-top)); width:44px; height:44px; border-radius:50%; display:grid; place-items:center; border:1px solid var(--line); background:var(--panel); color:var(--muted); transition:transform .3s var(--ease), color .2s; }
   #gear:hover { color:var(--text); transform:rotate(45deg); }
   #set label { display:flex; flex-direction:column; gap:6px; margin:16px 0 0; color:var(--muted); font-size:14px; }
+  #set .box { max-height:calc(100vh - 32px); overflow-y:auto; }
+  .keysHead { margin:20px 0 8px; color:var(--muted); font-size:14px; }
+  .keysHead span { font-size:12px; opacity:.7; margin-left:6px; }
+  .sc { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:6px 0; font-size:14px; }
+  .sc button { min-width:110px; padding:7px 12px; border-radius:10px; border:1px solid var(--line); background:var(--panel-2); color:var(--text); font:600 13px ui-monospace, "Cascadia Mono", Consolas, monospace; transition:border-color .2s, box-shadow .2s, color .2s; }
+  .sc button:hover { border-color:#ffffff40; }
+  .sc button.empty { color:var(--muted); font-weight:400; }
+  .sc button.listening { border-color:var(--accent); color:var(--accent-2); box-shadow:0 0 0 4px #e0457b26; animation:blink 1.2s ease-in-out infinite; }
   #set select { padding:12px; border-radius:12px; border:1px solid var(--line); background:var(--panel-2); color:var(--text); font:inherit; }
   #set .btn { margin-top:20px; float:right; }
   #ver { float:left; margin:30px 0 0; color:var(--muted); font-size:13px; }
@@ -183,6 +207,15 @@
   #chatBtn.unseen .unread { transform:scale(1); }
   #chat { position:absolute; right:0; top:0; bottom:0; width:min(360px,100%); display:flex; flex-direction:column; background:#101217f2; border-left:1px solid var(--line); z-index:6; animation:slidein .3s var(--ease) both; user-select:text; -webkit-user-select:text; }
   @keyframes slidein { from { transform:translateX(100%); } }
+  @keyframes sheetin { from { transform:translateY(100%); } }
+  /* PC: the chat beside the call. Phone: a sheet over the bottom half, the call in the top half. */
+  @media (min-width:700px) { #call.chatting { --right:360px; } }
+  @media (max-width:699.98px) {
+    #call.chatting { --bottom:55vh; }
+    #chat { top:auto; left:0; width:auto; height:55vh; border-left:0; border-top:1px solid var(--line); border-radius:20px 20px 0 0; animation-name:sheetin; }
+    #chat header, .win #chat header { padding-top:12px; }
+  }
+  .pip #call { --right:0px; --bottom:0px; }
   #chat header { display:flex; align-items:center; justify-content:space-between; padding:calc(12px + env(safe-area-inset-top)) 12px 8px 18px; font-size:17px; }
   #msgs { flex:1; overflow-y:auto; padding:8px 12px; display:flex; flex-direction:column; gap:6px; }
   .msg { max-width:80%; padding:8px 12px; border-radius:16px; background:var(--panel-2); align-self:flex-start; overflow-wrap:anywhere; white-space:pre-wrap; animation:pop .25s var(--ease) both; }
@@ -202,7 +235,19 @@
   .float.media { padding:4px; }
   .float.out { opacity:0; transform:translateY(8px); }
   .float img, .float video { display:block; max-width:220px; max-height:150px; border-radius:12px; }
-  .pip #chat, .pip #floats { display:none; }
+  .pip #chat, .pip #floats, .pip #viewer { display:none; }
+  .msg.media img, .msg.media video, .float.media img, .float.media video { cursor:zoom-in; }
+  .media.vid { position:relative; }
+  .media.vid::after { content:""; position:absolute; left:50%; top:50%; width:44px; height:44px; margin:-22px 0 0 -22px; border-radius:50%; pointer-events:none;
+    background:#000a url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M9 6v12l10-6z'/%3E%3C/svg%3E") center/20px no-repeat; }
+
+  /* ---------- Photo / video viewer: full screen, the call in a floating panel (openViewer) ---------- */
+  #viewer { position:absolute; inset:0; z-index:7; background:#000000e6; }
+  #viewMedia { position:absolute; inset:0; display:grid; place-items:center; padding:64px 16px calc(16px + env(safe-area-inset-bottom)); }
+  #viewMedia img, #viewMedia video { max-width:100%; max-height:100%; border-radius:12px; box-shadow:0 20px 60px #000a; }
+  #viewClose { position:absolute; left:16px; top:calc(16px + env(safe-area-inset-top)); background:#ffffff1a; color:#fff; }
+  .viewing #remote { left:auto; top:auto; right:16px; bottom:calc(20px + env(safe-area-inset-bottom)); width:min(32vw,300px); height:auto; aspect-ratio:16/9; border-radius:16px; object-fit:cover !important; background:var(--panel-2); box-shadow:0 12px 40px #000c; z-index:8; cursor:pointer; }
+  .viewing #me { display:none; }
   /* ---------- Splash: two drops melt into one, the heart beats, the name rises ---------- */
   body:not(.ready) .card { animation-play-state:paused; }
   #splash { position:fixed; inset:0; z-index:20; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; background:radial-gradient(circle at 50% 42%, #1c1420, var(--bg) 70%); transition:opacity .5s ease, transform .6s var(--ease); }
@@ -242,6 +287,7 @@
   <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-deaf" viewBox="0 0 24 24"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></symbol>
   <symbol id="i-deaf-off" viewBox="0 0 24 24"><path d="M21 14h-1.34"/><path d="M9 21H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 15.86-5.8"/><path d="M3 14h3a2 2 0 0 1 2 2v3"/><path d="M21 12v7a2 2 0 0 1-.6 1.4"/><path d="m2 2 20 20"/></symbol>
+  <symbol id="i-flip" viewBox="0 0 24 24"><path d="M11 19H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/><path d="M13 5h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-5"/><circle cx="12" cy="12" r="3"/><path d="m18 22-3-3 3-3"/><path d="m6 2 3 3-3 3"/></symbol>
   <symbol id="i-user" viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
   <symbol id="i-chat" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
   <symbol id="i-clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
@@ -272,7 +318,7 @@
 
 <main id="join">
   <div class="blob b1"></div><div class="blob b2"></div>
-  <button id="gear" aria-label="Audio settings" title="Audio settings"><svg class="i"><use href="#i-gear"/></svg></button>
+  <button id="gear" aria-label="Settings" title="Settings"><svg class="i"><use href="#i-gear"/></svg></button>
   <div class="card">
     <div class="logo"><svg class="i"><use href="#i-heart"/></svg></div>
     <h1>rxConnect</h1>
@@ -310,6 +356,7 @@
     <video id="local" class="mirror" autoplay playsinline muted poster="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></video>
     <div class="camoff"><svg class="i"><use href="#i-cam-off"/></svg></div>
     <div class="badge"><svg class="i"><use href="#i-mic-off"/></svg></div>
+    <button id="flip" hidden aria-label="Switch camera" title="Switch camera"><svg class="i"><use href="#i-flip"/></svg></button>
   </div>
   <nav id="bar">
     <button id="mic" class="ctl" aria-label="Mute" title="Mute"><svg class="i"><use href="#i-mic"/></svg></button>
@@ -317,7 +364,7 @@
     <button id="cam" class="ctl" aria-label="Turn camera off" title="Camera"><svg class="i"><use href="#i-cam"/></svg></button>
     <button id="screen" class="ctl" aria-label="Share screen" title="Share screen"><svg class="i"><use href="#i-screen"/></svg></button>
     <button id="chatBtn" class="ctl" aria-label="Chat" title="Chat"><svg class="i"><use href="#i-chat"/></svg><i class="unread"></i></button>
-    <button id="callGear" class="ctl" aria-label="Audio settings" title="Audio settings"><svg class="i"><use href="#i-gear"/></svg></button>
+    <button id="callGear" class="ctl" aria-label="Settings" title="Settings"><svg class="i"><use href="#i-gear"/></svg></button>
     <button id="leave" class="ctl leave" aria-label="Leave call" title="Leave"><svg class="i"><use href="#i-hangup"/></svg></button>
   </nav>
   <div id="floats" aria-live="polite"></div>
@@ -330,15 +377,31 @@
       <button class="icon send" aria-label="Send"><svg class="i"><use href="#i-send"/></svg></button>
     </form>
   </aside>
+  <div id="viewer" hidden>
+    <div id="viewMedia"></div>
+    <button id="viewClose" class="icon" aria-label="Close" title="Close (Esc)"><svg class="i"><use href="#i-x"/></svg></button>
+  </div>
 </section>
 
 <div id="set" hidden role="dialog" aria-modal="true" aria-labelledby="setTitle">
   <div class="box">
-    <div class="head"><div class="ic"><svg class="i"><use href="#i-gear"/></svg></div><b id="setTitle">Audio</b></div>
+    <div class="head"><div class="ic"><svg class="i"><use href="#i-gear"/></svg></div><b id="setTitle">Settings</b></div>
     <label>Microphone<select id="micSel"></select></label>
     <label id="spkRow">Speaker<select id="spkSel"></select></label>
+    <div id="keys" hidden>
+      <div class="keysHead">Shortcuts <span>click, then press keys · ⌫ clears</span></div>
+      <div id="keyList"></div>
+    </div>
     <p id="ver"></p>
     <button id="setDone" class="btn go">Done</button>
+  </div>
+</div>
+
+<div id="perm" hidden role="dialog" aria-modal="true" aria-labelledby="permTitle">
+  <div class="box">
+    <div class="head"><div class="ic"><svg class="i"><use href="#i-gear"/></svg></div><b id="permTitle">One more step</b></div>
+    <p id="permText"></p>
+    <div id="permBtns"><button id="permLater" class="btn">Later</button><button id="permGo" class="btn go">Allow</button></div>
   </div>
 </div>
 
@@ -530,6 +593,42 @@ async function swapMic() {
   rawMic = raw;
 }
 
+// ideal, not exact: cameras that can't do 720p30 still open at their best
+const CAM = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } };
+
+// Switch camera: on phones front <-> back (facingMode, not every extra lens), on PCs the next webcam. The old camera
+// is stopped first (phones can't open two at once); camera off stays off; the back camera isn't mirrored.
+async function flipCam() {
+  if (!camTrack || $('cam').disabled) return;
+  const old = camTrack, s = old.getSettings();
+  let want;
+  if (s.facingMode) want = { facingMode: { exact: s.facingMode === 'environment' ? 'user' : 'environment' } };
+  else {
+    const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+    want = { deviceId: { exact: cams[(cams.findIndex(d => d.deviceId === s.deviceId) + 1) % cams.length].deviceId } };
+  }
+  $('flip').classList.remove('turning'); void $('flip').offsetWidth; $('flip').classList.add('turning');
+  // Detached from the call before it stops: a sender whose track ends stops encoding, even after a new track.
+  const sender = !screenTrack && call && call.peerConnection && call.peerConnection.getSenders().find(x => x.track === old);
+  if (sender) await sender.replaceTrack(null);
+  old.stop();
+  let t;
+  try { t = (await navigator.mediaDevices.getUserMedia({ video: { ...CAM, ...want } })).getVideoTracks()[0]; }
+  catch { t = (await navigator.mediaDevices.getUserMedia({ video: { ...CAM, deviceId: s.deviceId } })).getVideoTracks()[0]; } // back to the old one
+  t.enabled = old.enabled;
+  camTrack = t;
+  tameLights(t);
+  if (sender) await sender.replaceTrack(t);
+  if (!screenTrack) sendVideo(t);
+  const back = t.getSettings().facingMode === 'environment';
+  for (const v of [$('local'), $('selfWait')]) v.classList.toggle('mirror', !back && !screenTrack);
+}
+$('flip').addEventListener('pointerdown', e => e.stopPropagation()); // not a drag or tap of your tile
+$('flip').onclick = e => { e.stopPropagation(); sound.click(); flipCam().catch(() => {}); };
+async function showFlip() {
+  try { $('flip').hidden = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput').length < 2; } catch {}
+}
+
 async function startMedia() {
   // Android app with headphones: only the camera comes from here, the mic from the app (nativeMic), which keeps
   // Bluetooth headphones in their good-sound profile. On the loudspeaker the WebView's own mic: it puts the phone in
@@ -539,8 +638,7 @@ async function startMedia() {
   const app = window.RxAudio && RxAudio.ownMic(pref('rxSpk'));
   micPath = app ? 'native' : window.RxAudio ? 'callmode' : 'browser';
   if (window.RxAudio && RxAudio.phoneSpeaker(pref('rxSpk'))) speakerOut = await nativeSpeaker();
-  // ideal, not exact: cameras that can't do 720p30 still open at their best
-  const video = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } };
+  const video = CAM;
   const audio = window.RxAudio ? mic : Object.assign({}, mic, pref('rxMic') && { deviceId: pref('rxMic') }); // Android ids are the app's
   const opts = app ? [{ video }, {}] : [{ video, audio }, { audio }, {}];
   for (const o of opts) {
@@ -552,6 +650,7 @@ async function startMedia() {
   if (raw) { local.removeTrack(raw); local.addTrack(await voiceFilter(raw)); }
   camTrack = local.getVideoTracks()[0];
   camTrack && tameLights(camTrack);
+  camTrack && showFlip();
   if (!camTrack) { // no webcam: send a black frame so screen share still has a video track to swap into
     const c = Object.assign(document.createElement('canvas'), { width: 640, height: 480 });
     c.getContext('2d').fillRect(0, 0, 640, 480);
@@ -606,6 +705,7 @@ function join(room, n) {
   peer.on('connection', d => d.metadata === 'probe' || d.on('data', st => { // probe: someone's checkRoom
     if (!st || typeof st !== 'object') return;
     if (st.kind) return gotMsg(st);
+    if (st.act === 'swapShare') { camBig = !camBig; return; } // she tapped the box in your shared screen
     $('call').classList.toggle('themMuted', !!(st.muted || st.deaf));
     $('themWhat').textContent = st.deaf ? 'Deafened' : 'Muted';
     $('call').classList.toggle('themCamOff', !!st.camOff);
@@ -659,9 +759,10 @@ let theyShare = false;
 function fit() {
   const v = $('remote');
   if (!v.videoWidth) return;
-  const r = (v.videoWidth / v.videoHeight) / (innerWidth / innerHeight);
-  // While she shares her screen, always whole: cropping would cut the edges of her screen and her camera in the corner.
-  v.style.objectFit = !theyShare && r > 0.75 && r < 1.33 ? 'cover' : 'contain';
+  const r = (v.videoWidth / v.videoHeight) / ((v.clientWidth || innerWidth) / (v.clientHeight || innerHeight)); // her area, not the window: the chat can take part
+  // While she shares her screen, cropped only when her picture is a little wider than the space (a phone turned
+  // sideways: no black bars left and right), and then by at most 10% top and bottom, which her camera box stays clear of.
+  v.style.objectFit = (theyShare ? r >= 0.8 && r <= 1 : r > 0.75 && r < 1.33) ? 'cover' : 'contain';
 }
 $('remote').addEventListener('resize', fit);
 // Your tile: drag it anywhere and it glides to the nearest corner when you let go (remembered for next time). A tap
@@ -688,7 +789,7 @@ $('remote').addEventListener('resize', fit);
     if (!drag) return;
     const moved = drag.moved;
     drag = null;
-    if (!moved) { me.style.transform = ''; if (e.type === 'pointerup') swap(true); return; }
+    if (!moved) { me.style.transform = ''; if (e.type === 'pointerup') tapped(); return; }
     const from = me.getBoundingClientRect(), cx = from.left + from.width / 2, cy = from.top + from.height / 2;
     me.dataset.corner = (cy < innerHeight / 2 ? 't' : 'b') + (cx < innerWidth / 2 ? 'l' : 'r');
     try { localStorage.setItem('rxCorner', me.dataset.corner); } catch {}
@@ -699,12 +800,95 @@ $('remote').addEventListener('resize', fit);
     me.style.transition = 'transform .45s cubic-bezier(.2, 1.3, .4, 1)'; // ...then glide in, with a little overshoot
     me.style.transform = '';
   };
+  // A tap swaps (or restores a minimized tile); a double tap minimizes / restores. So a tap waits 0.3 s for a second one.
+  let lastTap = 0, tapTimer;
+  function tapped() {
+    const now = performance.now();
+    clearTimeout(tapTimer);
+    if (now - lastTap < 300) { lastTap = 0; me.classList.toggle('mini'); return; }
+    lastTap = now;
+    tapTimer = setTimeout(() => me.classList.contains('mini') ? me.classList.remove('mini') : swap(true), 300);
+  }
   me.addEventListener('pointerup', drop);
   me.addEventListener('pointercancel', drop);
   me.addEventListener('transitionend', () => { me.style.transition = ''; });
 })();
-$('remote').onclick = () => swap(false);
+$('remote').onclick = e => {
+  if (viewing) return closeViewer();
+  if ($('call').classList.contains('swap')) return swap(false);
+  if (theyShare && inBox(e) && tell && tell.open) tell.send({ act: 'swapShare' }); // her screen and camera swap places
+};
+// Whether a tap on her picture is on the corner box of her shared screen (bottom right of the picture itself,
+// wherever object-fit puts it).
+function inBox(e) {
+  const v = $('remote'), r = v.getBoundingClientRect();
+  if (!v.videoWidth) return false;
+  const k = (v.style.objectFit === 'cover' ? Math.max : Math.min)(r.width / v.videoWidth, r.height / v.videoHeight);
+  const x = (e.clientX - r.left - (r.width - v.videoWidth * k) / 2) / (v.videoWidth * k);
+  const y = (e.clientY - r.top - (r.height - v.videoHeight * k) / 2) / (v.videoHeight * k);
+  return x > 0.62 && x <= 1 && y > 0.4 && y <= 1;
+}
 // You big, her in the tile. In the Windows app her tile mustn't drag the window then, so it can be tapped back.
+// ---------- Photo / video viewer. A tap on one in the chat (or floating) zooms it out of its thumbnail to full screen,
+// and the call shrinks into a panel in the corner, still playing. The panel, ✕, Esc or the dark background go back.
+// Everything moves by transform only (FLIP: measure, change the layout, animate from the old place), so it's smooth.
+let viewing = null;
+const EASE = 'cubic-bezier(.2, .8, .2, 1)';
+// Animates el from rect `from` to where it is now, scaling evenly about the centres (a video never looks stretched).
+function flip(el, from) {
+  const to = el.getBoundingClientRect();
+  if (!from.width || !to.width) return null;
+  const moved = `translate(${from.left + from.width / 2 - to.left - to.width / 2}px, ${from.top + from.height / 2 - to.top - to.height / 2}px) scale(${from.width / to.width})`;
+  return el.animate([{ transform: moved }, { transform: 'none' }], { duration: 420, easing: EASE });
+}
+function viewMode(on) {
+  const r = $('remote').getBoundingClientRect();
+  $('call').classList.toggle('viewing', on);
+  if (window.__TAURI__) $('remote').toggleAttribute('data-tauri-drag-region', !on); // the panel is tapped, not dragged
+  flip($('remote'), r);
+}
+function openViewer(thumb) {
+  if (viewing) return;
+  if ($('call').classList.contains('swap')) swap(false);
+  const video = thumb.tagName === 'VIDEO';
+  const media = video ? Object.assign(document.createElement('video'), { src: thumb.src, controls: true, autoplay: true, playsInline: true })
+    : Object.assign(document.createElement('img'), { src: thumb.src, alt: 'Photo' });
+  media.style.opacity = 0; // until its size is known, so it zooms from the thumbnail instead of flashing in place
+  $('viewMedia').replaceChildren(media);
+  $('viewer').hidden = false;
+  viewing = { thumb, media };
+  $('viewer').animate([{ backgroundColor: '#0000' }, { backgroundColor: '#000000e6' }], { duration: 300, easing: 'ease-out' });
+  $('viewClose').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300 });
+  viewMode(true);
+  media.addEventListener(video ? 'loadedmetadata' : 'load', () => { media.style.opacity = ''; flip(media, thumb.getBoundingClientRect()); }, { once: true });
+}
+function closeViewer() {
+  if (!viewing) return;
+  const { thumb, media } = viewing;
+  viewing = null;
+  media.pause && media.pause();
+  const back = thumb.isConnected && thumb.getBoundingClientRect(); // floating ones may have gone already
+  const anims = [
+    $('viewer').animate([{ backgroundColor: '#000000e6' }, { backgroundColor: '#0000' }], { duration: 300, easing: 'ease-in', fill: 'forwards' }),
+    $('viewClose').animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: 'forwards' }),
+    back && back.width ? media.animate([{ transform: 'none' }, { transform: (() => { // back into its thumbnail
+      const t = media.getBoundingClientRect();
+      return `translate(${back.left + back.width / 2 - t.left - t.width / 2}px, ${back.top + back.height / 2 - t.top - t.height / 2}px) scale(${back.width / t.width})`;
+    })() }], { duration: 320, easing: EASE, fill: 'forwards' })
+      : media.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.92)' }], { duration: 250, fill: 'forwards' }),
+  ];
+  viewMode(false);
+  Promise.all(anims.map(a => a.finished)).then(() => {
+    if (viewing) return; // opened again meanwhile
+    $('viewer').hidden = true;
+    anims.forEach(a => a.cancel());
+    $('viewMedia').replaceChildren();
+  });
+}
+$('viewClose').onclick = closeViewer;
+$('viewer').addEventListener('click', e => { if (e.target === $('viewer') || e.target === $('viewMedia')) closeViewer(); });
+addEventListener('keydown', e => { if (e.key === 'Escape') closeViewer(); });
+
 function swap(on) {
   $('call').classList.toggle('swap', on);
   if (window.__TAURI__) $('remote').toggleAttribute('data-tauri-drag-region', !on);
@@ -721,7 +905,7 @@ function attach(c) {
     $('call').classList.contains('live') && sound.quit();
     call = null; $('remote').srcObject = null;
     $('call').classList.remove('themMuted', 'themCamOff');
-    swap(false);
+    swap(false); closeViewer();
     theyShare = false;
     setStatus('Waiting for the other person…');
   };
@@ -1052,7 +1236,9 @@ function showSelf(track) {
 // frames, and your face should keep moving. Frame-driven, not timers, so it keeps going while the app is in the
 // background, which is when you're showing another window. Without a webcam, or without these browser features,
 // it's just the screen.
+let camBig = false; // she tapped your camera box: you big, the screen in the box (and back)
 function withCam(screen) {
+  camBig = false;
   if ($('cam').disabled || !window.MediaStreamTrackProcessor || !window.MediaStreamTrackGenerator) return screen;
   const out = new MediaStreamTrackGenerator({ kind: 'video' }), writer = out.writable.getWriter();
   const canvas = new OffscreenCanvas(2, 2), g = canvas.getContext('2d');
@@ -1064,20 +1250,28 @@ function withCam(screen) {
     last = now;
     const w = scr.displayWidth, h = scr.displayHeight;
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-    g.drawImage(scr, 0, 0, w, h);
-    if (face && camTrack.enabled) {
-      // 28% of the width (at most 40% of the height), so she can still see your face on a phone.
-      let fw = Math.round(w * 0.28), fh = Math.round(fw * face.displayHeight / face.displayWidth);
-      if (fh > h * 0.4) { fh = Math.round(h * 0.4); fw = Math.round(fh * face.displayWidth / face.displayHeight); }
-      const m = Math.round(w * 0.02);
-      const x = w - fw - m, y = h - fh - m, r = Math.round(fw * 0.08);
-      g.save(); g.beginPath(); g.roundRect(x, y, fw, fh, r); g.clip();
-      g.drawImage(face, x, y, fw, fh);
-      g.restore();
-      g.lineWidth = Math.max(2, w / 640); g.strokeStyle = '#ffffff66';
-      g.beginPath(); g.roundRect(x, y, fw, fh, r); g.stroke();
+    const cam = face && camTrack.enabled;
+    if (cam && camBig) { // you fill the picture (cropped to it), the screen goes in the box
+      const k = Math.max(w / face.displayWidth, h / face.displayHeight), dw = face.displayWidth * k, dh = face.displayHeight * k;
+      g.drawImage(face, (w - dw) / 2, (h - dh) / 2, dw, dh);
+      box(scr, w, h);
+    } else {
+      g.drawImage(scr, 0, 0, w, h);
+      if (cam) box(face, w, h);
     }
     writer.write(new VideoFrame(canvas, { timestamp: Math.round(now * 1000) })).catch(() => {});
+  };
+  // The corner box: 32% of the width (at most 45% of the height), 11% up from the bottom so it stays in view when
+  // the picture is cropped a little on her side (fit), 2% from the side.
+  const box = (src, w, h) => {
+    let bw = Math.round(w * 0.32), bh = Math.round(bw * src.displayHeight / src.displayWidth);
+    if (bh > h * 0.45) { bh = Math.round(h * 0.45); bw = Math.round(bh * src.displayWidth / src.displayHeight); }
+    const x = w - bw - Math.round(w * 0.02), y = h - bh - Math.round(h * 0.11), r = Math.round(bw * 0.07);
+    g.save(); g.beginPath(); g.roundRect(x, y, bw, bh, r); g.clip();
+    g.drawImage(src, x, y, bw, bh);
+    g.restore();
+    g.lineWidth = Math.max(2, w / 640); g.strokeStyle = '#ffffff80';
+    g.beginPath(); g.roundRect(x, y, bw, bh, r); g.stroke();
   };
   const pump = async (track, keep) => {
     const reader = new MediaStreamTrackProcessor({ track }).readable.getReader();
@@ -1137,14 +1331,25 @@ $('deaf').onclick = () => { sound.click(); setDeaf(!deaf); };
 // ---------- Chat: text, photos and videos over the same direct connection as the mute state (tell / peer
 // 'connection'), gone when the call ends. While it's closed, a message floats on screen and the button gets a dot.
 const MAX_FILE = 25 << 20;
-const chatOpen = () => !$('chat').hidden;
+const chatOpen = () => $('call').classList.contains('chatting');
 function scrollChat() { $('msgs').scrollTop = $('msgs').scrollHeight; }
-$('chatBtn').onclick = () => {
-  sound.click();
-  $('chat').hidden = chatOpen();
-  if (chatOpen()) { $('chatBtn').classList.remove('unseen'); $('floats').replaceChildren(); scrollChat(); }
-};
-$('chatClose').onclick = () => { $('chat').hidden = true; };
+// Opening slides the chat in while the call glides aside (--right / --bottom); closing slides it out the same way.
+function setChat(open) {
+  if (open === chatOpen()) return;
+  $('call').classList.toggle('chatting', open);
+  if (open) {
+    $('chat').getAnimations().forEach(a => a.cancel()); // reopened mid-close
+    $('chat').hidden = false;
+    $('chatBtn').classList.remove('unseen'); $('floats').replaceChildren(); scrollChat();
+  } else {
+    const out = innerWidth >= 700 ? 'translateX(100%)' : 'translateY(100%)';
+    $('chat').animate([{ transform: 'none' }, { transform: out }], { duration: 300, easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards' })
+      .finished.then(a => { if (!chatOpen()) { $('chat').hidden = true; a.cancel(); } }, () => {});
+  }
+  setTimeout(fit, 480); // her picture's new shape
+}
+$('chatBtn').onclick = () => { sound.click(); setChat(!chatOpen()); };
+$('chatClose').onclick = () => setChat(false);
 // m: {kind: 'text', text} or {kind: 'file', mime, data: ArrayBuffer}
 function bubble(m, cls) {
   const el = document.createElement('div');
@@ -1153,9 +1358,11 @@ function bubble(m, cls) {
   el.classList.add('media');
   const url = URL.createObjectURL(new Blob([m.data], { type: m.mime }));
   const media = m.mime.startsWith('video/')
-    ? Object.assign(document.createElement('video'), { src: url, controls: cls.startsWith('msg'), playsInline: true, preload: 'metadata' })
+    ? Object.assign(document.createElement('video'), { src: url, muted: true, playsInline: true, preload: 'metadata' })
     : Object.assign(document.createElement('img'), { src: url, alt: 'Photo' });
   media.addEventListener('load', scrollChat); media.addEventListener('loadedmetadata', scrollChat);
+  if (media.tagName === 'VIDEO') el.classList.add('vid');
+  media.addEventListener('click', e => { e.stopPropagation(); openViewer(media); });
   el.append(media);
   return el;
 }
@@ -1241,7 +1448,53 @@ function fill(sel, list, cur) {
 }
 $('callGear').onclick = () => { sound.click(); openSettings(); };
 $('gear').onclick = () => openSettings();
+// Keyboard shortcuts (PC): action -> key, by physical key (e.code) so they don't move with the keyboard layout. They
+// press the call's own buttons, and work while the app window is focused.
+const ACTIONS = [['mic', 'Mute'], ['deaf', 'Deafen'], ['cam', 'Camera'], ['screen', 'Share screen'], ['chatBtn', 'Chat'], ['leave', 'Leave call']];
+const KEY_DEFAULTS = { mic: 'Ctrl+Shift+KeyM', deaf: 'Ctrl+Shift+KeyD', cam: 'Ctrl+Shift+KeyE', chatBtn: 'Ctrl+Shift+KeyC' };
+let keys = KEY_DEFAULTS, listening = null;
+try { keys = Object.assign({}, KEY_DEFAULTS, JSON.parse(localStorage.getItem('rxKeys') || '{}')); } catch {}
+const combo = e => (e.ctrlKey ? 'Ctrl+' : '') + (e.altKey ? 'Alt+' : '') + (e.shiftKey ? 'Shift+' : '') + (e.metaKey ? 'Win+' : '') + e.code;
+const keyName = k => k ? k.replace(/(Key|Digit)(\w)$/, '$2').replace(/Arrow(\w+)$/, '$1') : 'Not set';
+function showKeys() {
+  $('keyList').replaceChildren(...ACTIONS.map(([id, label]) => {
+    const row = document.createElement('div'), b = document.createElement('button');
+    row.className = 'sc'; row.append(label, b);
+    b.textContent = keyName(keys[id]); b.className = keys[id] ? '' : 'empty'; b.dataset.act = id;
+    b.onclick = () => { if (listening) listening.classList.remove('listening'); listening = b; b.classList.add('listening'); b.textContent = 'Press keys…'; };
+    return row;
+  }));
+}
+addEventListener('keydown', e => {
+  if (listening) { // setting a shortcut
+    if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return; // wait for the actual key
+    e.preventDefault(); e.stopPropagation();
+    const id = listening.dataset.act;
+    if (e.key === 'Escape') {} // cancel: keep the old one
+    else if (e.key === 'Backspace' || e.key === 'Delete') keys[id] = '';
+    else {
+      const k = combo(e);
+      for (const other in keys) if (keys[other] === k) keys[other] = ''; // one key, one action
+      keys[id] = k;
+    }
+    listening = null;
+    try { localStorage.setItem('rxKeys', JSON.stringify(keys)); } catch {}
+    return showKeys();
+  }
+  // Typing (room name, chat): plain keys are text; only shortcuts with Ctrl or Alt act there.
+  if (e.target.matches && e.target.matches('input, textarea') && !e.ctrlKey && !e.altKey) return;
+  const k = combo(e), act = ACTIONS.find(([id]) => keys[id] === k);
+  if (!act) return;
+  // One of your shortcuts: never also what Windows or the browser does with those keys (Ctrl+Shift+C opens the
+  // inspector, for one), on any screen. Only while this window has focus; other apps get their keys as usual.
+  e.preventDefault(); e.stopPropagation();
+  if ($('call').style.display !== 'block' || e.repeat || $(act[0]).disabled) return;
+  $(act[0]).click();
+}, true);
+
 async function openSettings() {
+  $('keys').hidden = !!window.RxAudio; // PC only
+  if (!window.RxAudio) showKeys();
   let ins, outs = [];
   if (window.RxAudio) { ins = JSON.parse(RxAudio.inputs()); outs = JSON.parse(RxAudio.outputs()); }
   else {
@@ -1270,7 +1523,7 @@ $('spkSel').onchange = e => {
   audioCtx && toSpeaker(audioCtx); toSpeaker($('remote'));
   if (micPath === 'callmode') RxAudio.route(e.target.value);
 };
-$('setDone').onclick = () => { $('set').hidden = true; };
+$('setDone').onclick = () => { listening = null; $('set').hidden = true; };
 
 const native = window.RxNative ? { check: () => RxNative.check(), install: () => RxNative.install(), version: async () => RxNative.version() }
   : window.__TAURI__ ? { check: () => __TAURI__.core.invoke('check_update'), install: () => __TAURI__.core.invoke('install_update'), version: () => __TAURI__.core.invoke('version') }
@@ -1294,6 +1547,28 @@ window.rxUpdate = {
 $('updLater').onclick = rxUpdate.cancel;
 $('updGo').onclick = () => { rxUpdate.progress(0); native.install(); };
 native && native.check();
+
+// Android setup check (at start, so also after an update, and back from settings): what keeps a call going when you
+// leave the app. One thing at a time; "Later" skips it until the app is next opened. Never in a call.
+const NEEDS = {
+  pip: 'Turn on Picture-in-picture for rxConnect, so the call keeps going in a floating window when you leave the app (without it the other person sees you frozen).',
+  camera: 'Allow the camera, so the other person can see you.',
+  mic: 'Allow the microphone, so the other person can hear you.',
+  notifications: 'Allow notifications, so the call keeps running in the background, with its controls in the notification.',
+};
+window.rxCheck = () => {
+  if (!window.RxNative || !RxNative.missing || $('call').style.display === 'block') return;
+  let later = false;
+  try { later = sessionStorage.getItem('rxPermLater') === '1'; } catch {}
+  const what = JSON.parse(RxNative.missing()).find(w => NEEDS[w]);
+  if (!what || later) { $('perm').hidden = true; return; }
+  $('permText').textContent = NEEDS[what];
+  $('permGo').textContent = what === 'pip' ? 'Open settings' : 'Allow';
+  $('permGo').onclick = () => RxNative.fix(what);
+  $('perm').hidden = false;
+};
+$('permLater').onclick = () => { try { sessionStorage.setItem('rxPermLater', '1'); } catch {} $('perm').hidden = true; };
+rxCheck();
 </script>
 </body>
 </html>

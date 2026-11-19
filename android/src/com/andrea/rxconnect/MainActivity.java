@@ -2,6 +2,7 @@ package com.andrea.rxconnect;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AppOpsManager;
 import android.app.PictureInPictureParams;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -12,6 +13,7 @@ import android.media.AudioDeviceInfo;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.net.Uri;
+import android.provider.Settings;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -54,6 +56,7 @@ public class MainActivity extends Activity {
                 stopSpeaker();
                 unroute();
                 calling = false;
+                autoPip(false);
                 stopService(new Intent(MainActivity.this, CallService.class));
             }
 
@@ -116,8 +119,46 @@ public class MainActivity extends Activity {
     }
 
     @Override public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
+        if (code != 1) { js("window.rxCheck && rxCheck()"); return; } // asked again from the setup check
         // Load only now, so the page's getUserMedia sees the final answer.
         web.loadUrl("https://" + HOST + "/index.html");
+    }
+
+    // Back from the settings the setup check opened: check again (the page closes its dialog once all is set).
+    @Override protected void onResume() {
+        super.onResume();
+        js("window.rxCheck && rxCheck()");
+    }
+
+    // --- Setup check: what the app needs to keep a call going when you leave it. The page asks at start (so also
+    // after an update) and shows a dialog for whatever is missing; fix() asks for it or opens the right settings. ---
+
+    /** The floating-window switch for this app (Settings > Apps > rxConnect > Picture-in-picture), off on some phones. */
+    boolean pipAllowed() {
+        return getSystemService(AppOpsManager.class).checkOpNoThrow(AppOpsManager.OPSTR_PICTURE_IN_PICTURE,
+                getApplicationInfo().uid, getPackageName()) == AppOpsManager.MODE_ALLOWED;
+    }
+
+    String missing() {
+        org.json.JSONArray m = new org.json.JSONArray();
+        if (!pipAllowed()) m.put("pip");
+        if (!has(Manifest.permission.CAMERA)) m.put("camera");
+        if (!has(Manifest.permission.RECORD_AUDIO)) m.put("mic");
+        if (Build.VERSION.SDK_INT >= 33 && !has(Manifest.permission.POST_NOTIFICATIONS)) m.put("notifications");
+        return m.toString();
+    }
+
+    void fix(String what) {
+        String perm = what.equals("camera") ? Manifest.permission.CAMERA : what.equals("mic") ? Manifest.permission.RECORD_AUDIO
+                : what.equals("notifications") ? "android.permission.POST_NOTIFICATIONS" : null;
+        // Android still asks for it itself, unless it was refused for good: then only the app's settings can.
+        if (perm != null && shouldShowRequestPermissionRationale(perm)) { requestPermissions(new String[] {perm}, 3); return; }
+        Uri app = Uri.parse("package:" + getPackageName());
+        try {
+            startActivity(new Intent(what.equals("pip") ? "android.settings.PICTURE_IN_PICTURE_SETTINGS" : Settings.ACTION_APPLICATION_DETAILS_SETTINGS, app));
+        } catch (android.content.ActivityNotFoundException e) {
+            startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, app));
+        }
     }
 
     boolean has(String p) { return checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED; }
@@ -129,7 +170,17 @@ public class MainActivity extends Activity {
 
     boolean calling; // in a room: set by inCall, cleared when the page reloads on leaving
 
-    @Override protected void onUserLeaveHint() { pip(); }
+    // Android 12+: auto-enter (autoPip) is what reliably catches the home gesture; older ones get this.
+    @Override protected void onUserLeaveHint() { if (Build.VERSION.SDK_INT < 31) pip(); }
+
+    /** In a call: leaving the app (home, gesture, another app) turns it into the floating window by itself. */
+    void autoPip(boolean on) {
+        if (Build.VERSION.SDK_INT < 31) return;
+        try {
+            setPictureInPictureParams(new PictureInPictureParams.Builder().setAspectRatio(new Rational(3, 4)).setAutoEnterEnabled(on).build());
+        } catch (IllegalStateException e) { // floating window switched off for the app: the setup check asks for it
+        }
+    }
 
     boolean pip() {
         if (!calling || isInPictureInPictureMode()) return false;
@@ -143,7 +194,7 @@ public class MainActivity extends Activity {
     // The page hides its controls in the small window (.pip in index.html).
     @Override public void onPictureInPictureModeChanged(boolean on, Configuration c) {
         super.onPictureInPictureModeChanged(on, c);
-        js("document.body.classList.toggle('pip'," + on + "); $('call').classList.remove('swap')"); // the small window shows her
+        js("document.body.classList.toggle('pip'," + on + "); $('call').classList.remove('swap'); closeViewer()"); // the small window shows her
     }
 
     // --- Updates: the page shows the question and the bar (rxUpdate in index.html), Updater does the work ---
@@ -153,6 +204,11 @@ public class MainActivity extends Activity {
 
     /** What the page can call as RxNative.*; these run on a binder thread, so the network work goes to its own. */
     class Bridge {
+        /** What's missing for calls in the background, as JSON ["pip", "camera", "mic", "notifications"]. */
+        @JavascriptInterface public String missing() { return MainActivity.this.missing(); }
+
+        @JavascriptInterface public void fix(String what) { runOnUiThread(() -> MainActivity.this.fix(what)); }
+
         /** Battery as JSON {level: 0-100, charging}, for the low-battery popup in a call (rxBattery in index.html). */
         @JavascriptInterface public String battery() {
             Intent i = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED)); // the last broadcast, no receiver kept
@@ -272,7 +328,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void stopMic() { runOnUiThread(MainActivity.this::stopMic); }
 
         /** Joined a room: the call notification appears (CallService); it goes when the page reloads on leaving. */
-        @JavascriptInterface public void inCall(String room) { runOnUiThread(() -> { calling = true; CallService.start(MainActivity.this, room); }); }
+        @JavascriptInterface public void inCall(String room) { runOnUiThread(() -> { calling = true; autoPip(true); CallService.start(MainActivity.this, room); }); }
 
         @JavascriptInterface public void callState(boolean muted, boolean camOff) {
             runOnUiThread(() -> CallService.update(MainActivity.this, muted, camOff));
