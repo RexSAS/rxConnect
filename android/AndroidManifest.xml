@@ -7,8 +7,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <!-- No MODIFY_AUDIO_SETTINGS on purpose: the mic is recorded natively (Mic.java), and without this permission
-         WebView can't switch the phone to call mode, which would drop Bluetooth headphones to their call profile. -->
+    <!-- Lets WebView's mic switch the phone to call mode, which the phone's echo cancelling needs. The page uses that
+         mic only without headphones; with headphones the app records natively (Mic.java), so Bluetooth headphones
+         are never dropped to their call profile. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- CallService: keeps the call alive in the background. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />

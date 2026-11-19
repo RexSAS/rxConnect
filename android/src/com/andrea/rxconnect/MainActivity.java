@@ -181,6 +181,18 @@ public class MainActivity extends Activity {
             return list.toString();
         }
 
+        /** Sound goes to headphones (Bluetooth, wired or USB), so the phone speaker can't echo into the mic. */
+        @JavascriptInterface public boolean headphones() {
+            for (AudioDeviceInfo d : getSystemService(AudioManager.class).getDevices(AudioManager.GET_DEVICES_OUTPUTS))
+                switch (d.getType()) {
+                    case AudioDeviceInfo.TYPE_BLUETOOTH_A2DP: case AudioDeviceInfo.TYPE_WIRED_HEADPHONES:
+                    case AudioDeviceInfo.TYPE_WIRED_HEADSET: case AudioDeviceInfo.TYPE_USB_HEADSET:
+                    case 26 /* TYPE_BLE_HEADSET, Android 12+ */:
+                        return true;
+                }
+            return false;
+        }
+
         @JavascriptInterface public void stopMic() { runOnUiThread(MainActivity.this::stopMic); }
 
         /** Joined a room: the call notification appears (CallService); it goes when the page reloads on leaving. */

@@ -338,10 +338,14 @@ function tellApp() {
 $('room').onkeydown = e => { if (e.key === 'Enter') $('go').click(); }; // no return value: returning false would block every other key
 
 async function startMedia() {
-  const app = window.RxAudio; // Android app: only the camera comes from here, the mic from the app (nativeMic)
+  // Android app with headphones: only the camera comes from here, the mic from the app (nativeMic), which keeps
+  // Bluetooth headphones in their good-sound profile. On the loudspeaker the WebView's own mic: it puts the phone in
+  // call mode, the only way its echo cancelling hears what the speaker plays (else she hears herself back).
+  // shortcut: decided when the call starts; plugging headphones in mid-call keeps the choice until the next call.
+  const app = window.RxAudio && RxAudio.headphones();
   // ideal, not exact: cameras that can't do 720p30 still open at their best
   const video = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } };
-  const audio = Object.assign({}, mic, pref('rxMic') && { deviceId: pref('rxMic') });
+  const audio = window.RxAudio ? mic : Object.assign({}, mic, pref('rxMic') && { deviceId: pref('rxMic') }); // Android ids are the app's
   const opts = app ? [{ video }, {}] : [{ video, audio }, { audio }, {}];
   for (const o of opts) {
     try { local = Object.keys(o).length ? await navigator.mediaDevices.getUserMedia(o) : new MediaStream(); break; } catch {}
@@ -579,8 +583,8 @@ function tameLights(track) {
 // Discord-style filter on your voice before it's sent:
 // 1. RNNoise, AI noise removal like Discord's Krisp: hiss, fans, keyboard, traffic.
 // 2. A gate that silences the gaps between your words, which also cuts any leftover echo of her voice.
-// 3. A leveler: quiet speech brought up (compressor + gain), peaks kept clean (limiter). It comes after the noise
-//    removal, so it never turns hiss up.
+// 3. Automatic level: measures your voice while you speak and steers it to a steady loudness (up to +15 dB, down to
+//    -6), then a limiter keeps peaks clean. After the noise removal and gate, so silence and hiss never move it.
 // RNNoise and the gate are vendored in web/vendor/rnnoise (see its README).
 const VENDOR = 'vendor/rnnoise/';
 async function voiceFilter(track) {
@@ -596,19 +600,30 @@ async function voiceFilter(track) {
     ]);
     const mono = { channelCount: 1, channelCountMode: 'explicit', outputChannelCount: [1] };
     const rnnoise = new AudioWorkletNode(c, '@sapphi-red/web-noise-suppressor/rnnoise', { ...mono, processorOptions: { maxChannels: 1, wasmBinary } });
-    const gate = new AudioWorkletNode(c, '@sapphi-red/web-noise-suppressor/noise-gate', { ...mono, processorOptions: { openThreshold: -45, closeThreshold: -55, holdMs: 250, maxChannels: 1 } });
+    const gate = new AudioWorkletNode(c, '@sapphi-red/web-noise-suppressor/noise-gate', { ...mono, processorOptions: { openThreshold: -40, closeThreshold: -50, holdMs: 250, maxChannels: 1 } });
     node = node.connect(rnnoise).connect(gate);
   } catch (e) {
     console.warn('voice filter unavailable, using the browser noise suppression', e);
     track.applyConstraints({ ...mic, noiseSuppression: true }).catch(() => {});
   }
-  const comp = c.createDynamicsCompressor(), gain = c.createGain(), limiter = c.createDynamicsCompressor();
-  // Speech around -24 dBFS comes out near -14; louder speech is squeezed, the limiter stops anything clipping.
-  comp.threshold.value = -24; comp.knee.value = 6; comp.ratio.value = 3; comp.attack.value = 0.005; comp.release.value = 0.25;
-  gain.gain.value = 2; // about +6 dB
+  const agc = c.createGain(), limiter = c.createDynamicsCompressor(), meter = c.createAnalyser();
   limiter.threshold.value = -2; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.002; limiter.release.value = 0.1;
+  meter.fftSize = 2048;
+  node.connect(meter);
   const out = c.createMediaStreamDestination();
-  node.connect(comp).connect(gain).connect(limiter).connect(out);
+  node.connect(agc).connect(limiter).connect(out);
+  const buf = new Float32Array(meter.fftSize);
+  let level = -18;
+  const timer = setInterval(() => {
+    if (track.readyState === 'ended') return clearInterval(timer);
+    meter.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (const x of buf) sum += x * x;
+    const db = 10 * Math.log10(sum / buf.length + 1e-12);
+    if (db < -40) return; // not speaking (or only a whisper of echo): keep the gain as it is
+    level += (db - level) * 0.15; // ~0.7 s average of your speaking level
+    agc.gain.setTargetAtTime(10 ** (Math.max(-6, Math.min(15, -16 - level)) / 20), c.currentTime, 0.3);
+  }, 100);
   c.resume();
   return out.stream.getAudioTracks()[0];
 }
