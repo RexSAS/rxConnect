@@ -4,7 +4,6 @@
 mod update;
 
 fn main() {
-    update::cleanup();
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![update::check_update, update::install_update])
         .run(tauri::generate_context!())

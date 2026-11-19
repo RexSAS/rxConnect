@@ -1,11 +1,12 @@
 //! Self-update from GitHub releases (tag v<N>, from ../release.sh). The page (rxUpdate in web/index.html) asks
-//! and shows the bar; this checks, downloads and swaps the exe. The exe swap is rxcord's (crates/app/src/update.rs).
+//! and shows the bar; this checks, downloads the installer and runs it silently over the installed app.
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::os::windows::process::CommandExt;
+use std::path::PathBuf;
 use tauri::{AppHandle, WebviewWindow};
 
 const LATEST: &str = "https://api.github.com/repos/RexSAS/rxConnect/releases/latest";
-const ASSET: &str = "rxconnect-windows-x86_64.exe";
+const ASSET: &str = "rxconnect-windows-x86_64-setup.exe";
 const MAX_SIZE: usize = 100 << 20;
 
 /// This build's N, set by the release workflow. Local builds have none and never update.
@@ -13,7 +14,7 @@ fn current() -> Option<u32> {
     option_env!("RXCONNECT_VERSION")?.parse().ok()
 }
 
-/// (N, download url) of the latest release if it's newer than this build and has the exe attached yet.
+/// (N, download url) of the latest release if it's newer than this build and has the installer attached yet.
 fn newer() -> Result<Option<(u32, String)>, String> {
     let Some(mine) = current() else { return Ok(None) };
     let latest: serde_json::Value = get(LATEST)?.into_json().map_err(|e| e.to_string())?;
@@ -47,15 +48,21 @@ pub fn check_update(window: WebviewWindow) {
 #[tauri::command]
 pub fn install_update(app: AppHandle, window: WebviewWindow) {
     std::thread::spawn(move || match install(|p| js(&window, format!("rxUpdate.progress({p})"))) {
-        Ok(exe) => {
-            let _ = std::process::Command::new(exe).spawn();
+        Ok(setup) => {
+            // After we quit: install silently (/S; it closes this app if it's still running), then start the new
+            // version from the same place. raw_arg: cmd needs this exact quoting, which Rust's escaping would break.
+            let exe = std::env::current_exe().unwrap_or_default();
+            let _ = std::process::Command::new("cmd")
+                .raw_arg(format!("/C \"\"{}\" /S & start \"\" \"{}\"\"", setup.display(), exe.display()))
+                .creation_flags(0x0800_0000) // CREATE_NO_WINDOW: no console flashing up
+                .spawn();
             app.exit(0);
         }
         Err(e) => js(&window, format!("rxUpdate.failed({})", serde_json::Value::from(e))),
     });
 }
 
-/// Downloads the new exe (progress 0..100) and swaps it in; returns the path to start.
+/// Downloads the installer (progress 0..100) to the temp folder; returns its path.
 fn install(progress: impl Fn(u64)) -> Result<PathBuf, String> {
     let (_, url) = newer()?.ok_or("no newer version")?;
     let resp = get(&url)?;
@@ -80,31 +87,9 @@ fn install(progress: impl Fn(u64)) -> Result<PathBuf, String> {
         return Err("download cut short".into());
     }
     progress(100);
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    replace_exe(&exe, &bytes)?;
-    Ok(exe)
-}
-
-fn old_path(exe: &Path) -> PathBuf {
-    exe.with_extension("old")
-}
-
-/// Writes the new exe next to the running one, then swaps it in. Windows can't overwrite a running exe but can
-/// rename it, so it's moved aside first (deleted on the next start).
-fn replace_exe(exe: &Path, bytes: &[u8]) -> Result<(), String> {
-    let new = exe.with_extension("new");
-    let err = |what: &str, e: std::io::Error| format!("{what} {}: {e}", new.parent().map(|d| d.display().to_string()).unwrap_or_default());
-    std::fs::write(&new, bytes).map_err(|e| err("can't write to", e))?;
-    let _ = std::fs::remove_file(old_path(exe));
-    std::fs::rename(exe, old_path(exe)).map_err(|e| err("can't move the old version in", e))?;
-    std::fs::rename(&new, exe).map_err(|e| err("can't install into", e))
-}
-
-/// Deletes the previous version left by an update.
-pub fn cleanup() {
-    if let Ok(exe) = std::env::current_exe() {
-        let _ = std::fs::remove_file(old_path(&exe));
-    }
+    let setup = std::env::temp_dir().join(ASSET);
+    std::fs::write(&setup, bytes).map_err(|e| format!("can't save the installer: {e}"))?;
+    Ok(setup)
 }
 
 #[cfg(test)]
@@ -120,17 +105,5 @@ mod tests {
         // Release published but the exe not uploaded yet: nothing to offer.
         assert_eq!(parse(&serde_json::json!({"tag_name": "v13", "assets": []})), None);
         assert_eq!(parse(&serde_json::json!({"tag_name": "latest", "assets": []})), None);
-    }
-
-    #[test]
-    fn swaps_exe() {
-        let dir = std::env::temp_dir().join(format!("rxconnect-update-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let exe = dir.join("rxconnect.exe");
-        std::fs::write(&exe, b"old").unwrap();
-        replace_exe(&exe, b"new").unwrap();
-        assert_eq!(std::fs::read(&exe).unwrap(), b"new");
-        assert!(!exe.with_extension("new").exists());
-        std::fs::remove_dir_all(dir).unwrap();
     }
 }

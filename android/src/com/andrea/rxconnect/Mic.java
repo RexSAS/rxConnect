@@ -18,6 +18,19 @@ import java.util.function.Consumer;
  * for a moment. Recording here, pinned to the built-in mic, never touches the audio mode or the headphones.
  */
 final class Mic {
+    /**
+     * The name the settings show, or null for inputs it doesn't offer. No Bluetooth: its mic only works in call mode,
+     * which drops the headphones to their call profile (see above).
+     */
+    static String label(AudioDeviceInfo d) {
+        switch (d.getType()) {
+            case AudioDeviceInfo.TYPE_BUILTIN_MIC: return "Phone mic" + (d.getAddress().isEmpty() ? "" : " (" + d.getAddress() + ")");
+            case AudioDeviceInfo.TYPE_WIRED_HEADSET: return "Wired headset";
+            case AudioDeviceInfo.TYPE_USB_DEVICE: case AudioDeviceInfo.TYPE_USB_HEADSET: return "USB: " + d.getProductName();
+            default: return null;
+        }
+    }
+
     static final int RATE = 48000, CHUNK = RATE / 50; // 960 samples = 20 ms
 
     private final AudioRecord rec;
@@ -25,7 +38,8 @@ final class Mic {
     private volatile boolean on = true;
 
     /** Throws if the mic can't be opened (e.g. no RECORD_AUDIO). {@code out} is called on the recording thread. */
-    Mic(AudioManager am, Consumer<String> out) {
+    /** {@code device}: an AudioDeviceInfo id from the settings; "" or unplugged means the built-in mic. */
+    Mic(AudioManager am, String device, Consumer<String> out) {
         int min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         // VOICE_COMMUNICATION: the source the phone's own echo cancelling and noise suppression are tuned for.
         rec = new AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, RATE, AudioFormat.CHANNEL_IN_MONO,
@@ -34,8 +48,12 @@ final class Mic {
             rec.release();
             throw new IllegalStateException("mic unavailable");
         }
-        for (AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_INPUTS))
-            if (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_MIC) rec.setPreferredDevice(d);
+        AudioDeviceInfo pick = null;
+        for (AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
+            if (String.valueOf(d.getId()).equals(device) && label(d) != null) { pick = d; break; }
+            if (pick == null && d.getType() == AudioDeviceInfo.TYPE_BUILTIN_MIC) pick = d;
+        }
+        if (pick != null) rec.setPreferredDevice(pick);
         int session = rec.getAudioSessionId();
         if (AcousticEchoCanceler.isAvailable()) AcousticEchoCanceler.create(session).setEnabled(true);
         if (NoiseSuppressor.isAvailable()) NoiseSuppressor.create(session).setEnabled(true);

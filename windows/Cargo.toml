@@ -7,7 +7,7 @@ edition = "2021"
 tauri-build = "2"
 
 [dependencies]
-# custom-protocol: embed ../web in the exe, so plain `cargo build --release` gives a standalone app (no tauri-cli).
+# custom-protocol: embed ../web in the exe (the release builds the installer with tauri-cli, see release.yml).
 tauri = { version = "2", features = ["custom-protocol"] }
 serde_json = "1"
 ureq = { version = "2", features = ["json"] }

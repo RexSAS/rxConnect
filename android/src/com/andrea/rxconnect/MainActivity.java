@@ -2,7 +2,9 @@ package com.andrea.rxconnect;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.PictureInPictureParams;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
 import android.media.AudioDeviceInfo;
@@ -11,6 +13,7 @@ import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Rational;
 import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.WebMessage;
@@ -45,6 +48,7 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient() {
             @Override public void onPageStarted(WebView v, String url, android.graphics.Bitmap icon) { // left the call (page reload)
                 stopMic();
+                calling = false;
                 stopService(new Intent(MainActivity.this, CallService.class));
             }
 
@@ -92,7 +96,28 @@ public class MainActivity extends Activity {
     boolean has(String p) { return checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED; }
 
     // Back keeps the call going in the background; swiping the app away from recents ends it.
-    @Override public void onBackPressed() { moveTaskToBack(true); }
+    @Override public void onBackPressed() { if (!pip()) moveTaskToBack(true); }
+
+    // --- Floating window: leaving the app during a call shrinks it to picture-in-picture, like WhatsApp ---
+
+    boolean calling; // in a room: set by inCall, cleared when the page reloads on leaving
+
+    @Override protected void onUserLeaveHint() { pip(); }
+
+    boolean pip() {
+        if (!calling || isInPictureInPictureMode()) return false;
+        try {
+            return enterPictureInPictureMode(new PictureInPictureParams.Builder().setAspectRatio(new Rational(3, 4)).build());
+        } catch (IllegalStateException e) { // PiP turned off for this app in system settings
+            return false;
+        }
+    }
+
+    // The page hides its controls in the small window (.pip in index.html).
+    @Override public void onPictureInPictureModeChanged(boolean on, Configuration c) {
+        super.onPictureInPictureModeChanged(on, c);
+        js("document.body.classList.toggle('pip'," + on + ")");
+    }
 
     // --- Updates: the page shows the question and the bar (rxUpdate in index.html), Updater does the work ---
 
@@ -135,16 +160,31 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void callActive(boolean on) { runOnUiThread(() -> duck(on)); }
 
         /** Starts the native mic; its chunks reach the page through a message port posted as a "mic" message. */
-        @JavascriptInterface public boolean startMic() {
+        @JavascriptInterface public boolean startMic(String device) {
             if (!has(Manifest.permission.RECORD_AUDIO)) return false;
-            runOnUiThread(MainActivity.this::startMic);
+            runOnUiThread(() -> MainActivity.this.startMic(device));
             return true;
+        }
+
+        /** The mics the settings can offer, as JSON [{id, name}]; the id goes back through startMic. */
+        @JavascriptInterface public String inputs() {
+            org.json.JSONArray list = new org.json.JSONArray();
+            for (AudioDeviceInfo d : getSystemService(AudioManager.class).getDevices(AudioManager.GET_DEVICES_INPUTS)) {
+                String name = Mic.label(d);
+                if (name == null) continue;
+                try {
+                    list.put(new JSONObject().put("id", String.valueOf(d.getId())).put("name", name));
+                } catch (org.json.JSONException e) {
+                    throw new IllegalStateException(e);
+                }
+            }
+            return list.toString();
         }
 
         @JavascriptInterface public void stopMic() { runOnUiThread(MainActivity.this::stopMic); }
 
         /** Joined a room: the call notification appears (CallService); it goes when the page reloads on leaving. */
-        @JavascriptInterface public void inCall(String room) { runOnUiThread(() -> CallService.start(MainActivity.this, room)); }
+        @JavascriptInterface public void inCall(String room) { runOnUiThread(() -> { calling = true; CallService.start(MainActivity.this, room); }); }
 
         @JavascriptInterface public void callState(boolean muted, boolean camOff) {
             runOnUiThread(() -> CallService.update(MainActivity.this, muted, camOff));
@@ -159,13 +199,13 @@ public class MainActivity extends Activity {
 
     Mic mic;
 
-    void startMic() {
+    void startMic(String device) {
         stopMic();
         WebMessagePort[] ports = web.createWebMessageChannel();
         web.postWebMessage(new WebMessage("mic", new WebMessagePort[] {ports[1]}), Uri.parse("https://" + HOST));
         try {
             // Ports must be used on the UI thread; 50 small posts a second is nothing for it.
-            mic = new Mic(getSystemService(AudioManager.class), chunk -> runOnUiThread(() -> ports[0].postMessage(new WebMessage(chunk))));
+            mic = new Mic(getSystemService(AudioManager.class), device, chunk -> runOnUiThread(() -> ports[0].postMessage(new WebMessage(chunk))));
         } catch (RuntimeException e) {
             android.util.Log.w("rxConnect", "mic", e);
             ports[0].close();

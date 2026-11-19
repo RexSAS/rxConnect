@@ -9,5 +9,10 @@
     "windows": [{ "title": "rxConnect", "width": 1100, "height": 720, "useHttpsScheme": true }],
     "security": { "csp": null }
   },
-  "bundle": { "icon": ["icons/icon.png", "icons/icon.ico"] }
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "windows": { "nsis": { "installMode": "currentUser" } }
+  }
 }
