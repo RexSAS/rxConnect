@@ -5,113 +5,349 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>rxConnect</title>
 <style>
-  :root { --bg:#0e0f13; --panel:#1b1d24; --text:#eef0f5; --muted:#8a90a0; --accent:#e0457b; --off:#c0392b; }
-  * { box-sizing: border-box; }
-  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font:16px system-ui, sans-serif; }
-  button, input { font:inherit; }
-  #join { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:16px; }
-  #join h1 { margin:0; font-weight:600; }
-  #join input { width:min(320px,100%); padding:12px 14px; border-radius:12px; border:1px solid #333; background:var(--panel); color:var(--text); }
-  #join button { width:min(320px,100%); padding:12px; border:0; border-radius:12px; background:var(--accent); color:#fff; cursor:pointer; }
-  #join p { color:var(--muted); font-size:14px; max-width:320px; text-align:center; margin:0; }
-  #call { display:none; position:fixed; inset:0; }
-  #remote { width:100%; height:100%; object-fit:contain; background:#000; }
-  #local { position:absolute; right:16px; top:16px; width:min(28vw,220px); aspect-ratio:4/3; object-fit:cover; border-radius:12px; background:#222; border:2px solid #333; }
-  #local.mirror { transform:scaleX(-1); }
-  #status { position:absolute; left:50%; top:45%; transform:translate(-50%,-50%); color:var(--muted); text-align:center; padding:0 16px; }
-  #bar { position:absolute; left:0; right:0; bottom:0; display:flex; justify-content:center; gap:12px; padding:16px 16px calc(16px + env(safe-area-inset-bottom)); background:linear-gradient(transparent, #000a); }
-  #bar button { width:56px; height:56px; border-radius:50%; border:0; background:var(--panel); color:var(--text); font-size:22px; cursor:pointer; }
-  #bar button.off { background:var(--off); }
-  #bar button.on { background:var(--accent); }
-  #bar #leave { background:var(--off); }
+  :root {
+    --bg:#0b0c10; --panel:#16181f; --panel-2:#1f222b; --line:#2a2e39;
+    --text:#f2f3f7; --muted:#8b91a1; --accent:#e0457b; --accent-2:#ff7aa8;
+    --danger:#e5484d; --ok:#3dd68c; --warn:#f5b84a;
+    --ease:cubic-bezier(.2,.8,.2,1);
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font:16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow:hidden; }
+  button, input { font:inherit; color:inherit; }
+  button { cursor:pointer; }
   [hidden] { display:none !important; }
-  #upd { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; background:#000b; z-index:10; }
-  #upd .box { width:min(360px,100%); background:var(--panel); border-radius:16px; padding:20px; }
+  svg.i { width:24px; height:24px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; flex:none; }
+
+  /* ---------- Join screen ---------- */
+  #join { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; overflow:hidden; }
+  .blob { position:absolute; width:60vmax; height:60vmax; border-radius:50%; filter:blur(80px); opacity:.35; pointer-events:none; }
+  .blob.b1 { background:var(--accent); top:-30vmax; left:-20vmax; animation:drift 18s ease-in-out infinite alternate; }
+  .blob.b2 { background:#6c4bff; bottom:-35vmax; right:-25vmax; animation:drift 22s ease-in-out infinite alternate-reverse; }
+  @keyframes drift { to { transform:translate(8vmax, 6vmax) scale(1.1); } }
+  .card { position:relative; width:min(360px,100%); display:flex; flex-direction:column; align-items:center; gap:14px; text-align:center; animation:rise .7s var(--ease) both; }
+  @keyframes rise { from { opacity:0; transform:translateY(24px) scale(.98); } }
+  .logo { width:84px; height:84px; border-radius:50%; display:grid; place-items:center; background:linear-gradient(140deg, var(--accent-2), var(--accent)); box-shadow:0 10px 40px #e0457b55; animation:beat 2.4s ease-in-out infinite; }
+  .logo svg { width:40px; height:40px; fill:#fff; stroke:none; }
+  @keyframes beat { 0%,100% { transform:scale(1); } 12% { transform:scale(1.08); } 24% { transform:scale(1); } 36% { transform:scale(1.05); } }
+  h1 { margin:6px 0 0; font-size:30px; font-weight:700; letter-spacing:-.02em; }
+  .sub { margin:-8px 0 12px; color:var(--muted); }
+  .field { width:100%; display:flex; align-items:center; gap:10px; padding:0 14px; border-radius:14px; background:var(--panel); border:1px solid var(--line); transition:border-color .2s, box-shadow .2s; }
+  .field:focus-within { border-color:var(--accent); box-shadow:0 0 0 4px #e0457b26; }
+  .field svg { color:var(--muted); width:20px; height:20px; }
+  .field input { flex:1; min-width:0; padding:14px 0; border:0; background:none; outline:none; }
+  .primary { width:100%; display:flex; align-items:center; justify-content:center; gap:8px; padding:14px; border:0; border-radius:14px; background:linear-gradient(140deg, var(--accent-2), var(--accent)); color:#fff; font-weight:600; transition:transform .15s var(--ease), box-shadow .2s, filter .2s; box-shadow:0 8px 24px #e0457b40; }
+  .primary:hover { filter:brightness(1.08); }
+  .primary:active { transform:scale(.97); }
+  .primary svg { width:20px; height:20px; transition:transform .2s var(--ease); }
+  .primary:hover svg { transform:translateX(3px); }
+  .hint { margin:4px 0 0; color:var(--muted); font-size:13px; }
+
+  /* ---------- Call screen ---------- */
+  #call { display:none; position:fixed; inset:0; background:#000; animation:fade .4s ease both; }
+  @keyframes fade { from { opacity:0; } }
+  #remote { width:100%; height:100%; object-fit:contain; opacity:0; transform:scale(1.03); transition:opacity .6s ease, transform .8s var(--ease); }
+  .live #remote { opacity:1; transform:none; }
+
+  #waiting { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:28px; padding:16px; text-align:center; background:radial-gradient(circle at 50% 45%, #1c1420 0%, #000 70%); animation:fade .5s ease both; }
+  /* You, a flowing dotted line, and an empty dashed circle that breathes until they arrive. */
+  .pair { display:flex; align-items:center; margin-bottom:8px; }
+  .face { position:relative; width:112px; height:112px; flex:none; border-radius:50%; overflow:hidden; background:var(--panel-2); border:3px solid #ffffff26; box-shadow:0 12px 30px #0009; animation:pop .5s var(--ease) both; }
+  .face video { width:100%; height:100%; object-fit:cover; display:block; }
+  .face video.mirror { transform:scaleX(-1); }
+  .face.empty { display:grid; place-items:center; background:transparent; border:2px dashed #ffffff40; box-shadow:none; color:var(--muted); animation:pop .5s var(--ease) .15s both, breathe 2.4s ease-in-out .7s infinite; }
+  .face.empty svg { width:34px; height:34px; fill:currentColor; stroke:none; }
+  @keyframes breathe { 50% { transform:scale(1.07); border-color:var(--accent); color:var(--accent-2); } }
+  .dots { width:64px; height:4px; margin:0 8px; background:radial-gradient(circle, var(--accent) 1.6px, transparent 2px) 0 0/10px 4px; animation:flow .8s linear infinite; }
+  @keyframes flow { to { background-position:10px 0; } }
+  #status { margin:0; color:var(--text); font-size:19px; font-weight:600; }
+  #waiting .hint { margin:-18px 0 0; color:var(--muted); font-size:14px; }
+
+  #chip { position:absolute; left:16px; top:calc(16px + env(safe-area-inset-top)); display:flex; align-items:center; gap:8px; padding:8px 14px; border-radius:999px; background:#16181fcc; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); font-size:14px; font-variant-numeric:tabular-nums; animation:drop .5s var(--ease) .1s both; }
+  @keyframes drop { from { opacity:0; transform:translateY(-12px); } }
+  #chip .dot { width:8px; height:8px; border-radius:50%; background:var(--warn); box-shadow:0 0 0 0 var(--warn); animation:blink 1.6s ease-in-out infinite; }
+  .live #chip .dot { background:var(--ok); animation:none; }
+  @keyframes blink { 50% { opacity:.3; } }
+
+  #me { position:absolute; right:16px; top:calc(16px + env(safe-area-inset-top)); width:min(30vw,220px); aspect-ratio:3/4; border-radius:18px; overflow:hidden; background:var(--panel-2); box-shadow:0 10px 30px #0008; animation:pop .5s var(--ease) .2s both; transition:width .4s var(--ease); }
+  @media (min-aspect-ratio:1/1) { #me { aspect-ratio:4/3; } }
+  @keyframes pop { from { opacity:0; transform:scale(.85); } }
+  #local { width:100%; height:100%; object-fit:cover; display:block; }
+  #local.mirror { transform:scaleX(-1); }
+  .camoff { position:absolute; inset:0; display:grid; place-items:center; background:var(--panel-2); color:var(--muted); opacity:0; transition:opacity .25s; }
+  .nocam .camoff { opacity:1; }
+  #call:not(.live) #me { display:none; } /* while waiting you're the circle in the middle */
+  #me .badge { position:absolute; left:8px; bottom:8px; width:28px; height:28px; border-radius:50%; display:grid; place-items:center; background:var(--danger); transform:scale(0); transition:transform .25s var(--ease); }
+  #me .badge svg { width:16px; height:16px; color:#fff; }
+  .muted #me .badge { transform:scale(1); }
+
+  #bar { position:absolute; left:50%; bottom:calc(20px + env(safe-area-inset-bottom)); display:flex; gap:10px; padding:10px; border-radius:999px; background:#16181f59; border:1px solid #ffffff1f; backdrop-filter:blur(24px) saturate(1.4); -webkit-backdrop-filter:blur(24px) saturate(1.4); box-shadow:0 12px 40px #0008; transform:translateX(-50%); animation:slideup .6s var(--ease) .15s both; transition:opacity .35s, transform .35s var(--ease); }
+  @keyframes slideup { from { opacity:0; transform:translate(-50%, 30px); } }
+  .ctl { width:52px; height:52px; border:0; border-radius:50%; display:grid; place-items:center; background:#ffffff1a; color:var(--text); transition:background .2s, color .2s, transform .15s var(--ease); }
+  .ctl:hover { background:#ffffff2e; }
+  .ctl:active { transform:scale(.9); }
+  .ctl:disabled { opacity:.4; cursor:default; }
+  .ctl.off { background:#fff; color:#111; } /* muted / camera off */
+  .ctl.on { background:var(--accent); color:#fff; }
+  .ctl.leave { width:68px; border-radius:26px; background:#ff4d5a; color:#fff; }
+  .ctl.leave:hover { background:#ff6670; }
+  .ctl:focus-visible, .primary:focus-visible, .btn:focus-visible { outline:2px solid var(--accent-2); outline-offset:3px; }
+
+  /* Our own loading look; the videos' blank poster hides WebView's grey placeholder icon. */
+  .loading::after { content:""; position:absolute; inset:0; border-radius:inherit; background:linear-gradient(110deg, #1f222b 30%, #343846 50%, #1f222b 70%) 0 0/250% 100%; animation:shimmer 1.3s linear infinite; }
+  @keyframes shimmer { from { background-position:100% 0; } to { background-position:-150% 0; } }
+  #call.live.frames::before { content:""; position:absolute; left:50%; top:50%; width:44px; height:44px; margin:-22px 0 0 -22px; border-radius:50%; border:3px solid #ffffff1f; border-top-color:var(--accent); animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  /* Connected and no one touching the screen: get out of the way. */
+  .idle #bar { opacity:0; transform:translate(-50%, 20px); pointer-events:none; }
+  .idle #chip { opacity:0; transition:opacity .35s; }
+  .idle { cursor:none; }
+
+  /* ---------- Update dialog ---------- */
+  #upd { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; background:#000b; z-index:10; animation:fade .25s ease both; }
+  #upd .box { width:min(360px,100%); background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:22px; animation:pop .35s var(--ease) both; }
+  #upd .head { display:flex; align-items:center; gap:12px; }
+  #upd .head .ic { width:40px; height:40px; border-radius:12px; display:grid; place-items:center; background:#e0457b22; color:var(--accent-2); }
   #upd b { font-size:18px; }
-  #updText { color:var(--muted); margin:10px 0 16px; }
-  #updBar { height:8px; border-radius:4px; background:#333; overflow:hidden; }
-  #updBar i { display:block; height:100%; width:0; background:var(--accent); transition:width .2s; }
+  #updText { color:var(--muted); margin:14px 0 18px; }
+  #updBar { height:8px; border-radius:4px; background:var(--panel-2); overflow:hidden; }
+  #updBar i { display:block; height:100%; width:0; border-radius:4px; background:linear-gradient(90deg, var(--accent), var(--accent-2)); transition:width .3s ease; }
   #updBtns { display:flex; gap:10px; justify-content:flex-end; }
-  #updBtns button { padding:10px 18px; border:0; border-radius:10px; background:#333; color:var(--text); cursor:pointer; }
-  #updBtns #updGo { background:var(--accent); color:#fff; }
+  .btn { padding:10px 18px; border:0; border-radius:12px; background:var(--panel-2); transition:transform .15s var(--ease), filter .2s; }
+  .btn:active { transform:scale(.95); }
+  .btn.go { background:var(--accent); color:#fff; font-weight:600; }
+
+  @media (max-width:480px) {
+    .ctl { width:48px; height:48px; }
+    .ctl.leave { width:60px; }
+    #bar { gap:8px; padding:8px; }
+  }
+  /* ---------- Splash: two drops melt into one, the heart beats, the name rises ---------- */
+  body:not(.ready) .card { animation-play-state:paused; }
+  #splash { position:fixed; inset:0; z-index:20; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; background:radial-gradient(circle at 50% 42%, #1c1420, var(--bg) 70%); transition:opacity .5s ease, transform .6s var(--ease); }
+  #splash.out { opacity:0; transform:scale(1.08); pointer-events:none; }
+  #splash .stage { position:relative; width:200px; height:200px; }
+  #splash .goo { position:absolute; inset:0; width:100%; height:100%; }
+  #splash .goo circle { transform-box:fill-box; transform-origin:center; }
+  #splash .d1 { animation:drop-l 1s cubic-bezier(.6,0,.2,1) .15s both, swell .45s var(--ease) 1.05s both; }
+  #splash .d2 { animation:drop-r 1s cubic-bezier(.6,0,.2,1) .15s both, swell .45s var(--ease) 1.05s both; }
+  @keyframes drop-l { from { transform:translateX(-78px) scale(.7); } to { transform:none; } }
+  @keyframes drop-r { from { transform:translateX(78px) scale(.7); } to { transform:none; } }
+  @keyframes swell { to { transform:scale(1.62); } }
+  #splash .heart { position:absolute; left:50%; top:50%; width:40px; height:40px; margin:-20px 0 0 -20px; fill:#fff; stroke:none; animation:heart-in .5s cubic-bezier(.3,1.6,.5,1) 1.15s both, beat 1s ease-in-out 1.7s both; }
+  @keyframes heart-in { from { transform:scale(0) rotate(-20deg); opacity:0; } }
+  #splash h2 { margin:4px 0 0; font-size:32px; font-weight:700; letter-spacing:-.02em; display:flex; }
+  #splash h2 span { display:inline-block; animation:letter .55s var(--ease) both; }
+  @keyframes letter { from { opacity:0; transform:translateY(18px); filter:blur(6px); } }
+  #splash p { margin:0; color:var(--muted); animation:fade .6s ease 1.75s both; }
+
+  @media (prefers-reduced-motion:reduce) {
+    *, *::before, *::after { animation:none !important; transition:none !important; }
+  }
 </style>
 </head>
 <body>
-<div id="join">
-  <h1>rxConnect</h1>
-  <input id="room" placeholder="Room name (your secret word)" autocomplete="off">
-  <button id="go">Join</button>
-  <p>Use the same room name on both devices. Anyone who knows it can join, so pick something only you two know.</p>
+<!-- Icons: Lucide (ISC license); hang-up: Material Icons (Apache 2.0) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></symbol>
+  <symbol id="i-mic-off" viewBox="0 0 24 24"><path d="m2 2 20 20"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><path d="M12 19v3"/></symbol>
+  <symbol id="i-cam" viewBox="0 0 24 24"><path d="m16 13 5.22 3.48a.5.5 0 0 0 .78-.42V7.87a.5.5 0 0 0-.75-.43L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></symbol>
+  <symbol id="i-cam-off" viewBox="0 0 24 24"><path d="M10.66 6H14a2 2 0 0 1 2 2v2.5l5.25-3.06a.5.5 0 0 1 .75.43v8.2"/><path d="M16 16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2"/><path d="m2 2 20 20"/></symbol>
+  <symbol id="i-screen" viewBox="0 0 24 24"><path d="m9 10 3-3 3 3"/><path d="M12 13V7"/><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M12 17v4"/><path d="M8 21h8"/></symbol>
+  <symbol id="i-hangup" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.996.996 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.39.39.39 1.02 0 1.41l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28-.79-.74-1.69-1.36-2.66-1.85a.996.996 0 0 1-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+</svg>
+
+<div id="splash" aria-hidden="true">
+  <div class="stage">
+    <svg class="goo" viewBox="0 0 200 200">
+      <defs>
+        <!-- Blur, then sharpen the alpha: overlapping shapes melt together like liquid. -->
+        <filter id="melt"><feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b"/><feColorMatrix in="b" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -10"/></filter>
+        <linearGradient id="pink" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff7aa8"/><stop offset="1" stop-color="#e0457b"/></linearGradient>
+        <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b48bff"/><stop offset="1" stop-color="#e0457b"/></linearGradient>
+      </defs>
+      <g filter="url(#melt)">
+        <circle class="d2" cx="100" cy="100" r="26" fill="url(#violet)"/>
+        <circle class="d1" cx="100" cy="100" r="26" fill="url(#pink)"/>
+      </g>
+    </svg>
+    <svg class="heart"><use href="#i-heart"/></svg>
+  </div>
+  <h2 id="splashName"></h2>
+  <p>Just the two of us.</p>
 </div>
 
-<div id="call">
-  <video id="remote" autoplay playsinline></video>
-  <div id="status">Waiting for the other person…</div>
-  <video id="local" class="mirror" autoplay playsinline muted></video>
-  <div id="bar">
-    <button id="mic" title="Mute / unmute" aria-label="Mute or unmute microphone">🎤</button>
-    <button id="cam" title="Camera on / off" aria-label="Turn camera on or off">📷</button>
-    <button id="screen" title="Share screen" aria-label="Share screen">🖥️</button>
-    <button id="leave" title="Leave" aria-label="Leave call">✖</button>
+<main id="join">
+  <div class="blob b1"></div><div class="blob b2"></div>
+  <div class="card">
+    <div class="logo"><svg class="i"><use href="#i-heart"/></svg></div>
+    <h1>rxConnect</h1>
+    <p class="sub">Just the two of us.</p>
+    <label class="field">
+      <svg class="i"><use href="#i-key"/></svg>
+      <input id="room" placeholder="Room name" aria-label="Room name" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </label>
+    <button id="go" class="primary">Join call <svg class="i"><use href="#i-arrow"/></svg></button>
+    <p class="hint">Use the same room name on both devices. Anyone who knows it can join, so pick something only you two know.</p>
   </div>
-</div>
+</main>
+
+<section id="call">
+  <video id="remote" autoplay playsinline poster="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></video>
+  <div id="waiting">
+    <div class="pair">
+      <div class="face"><video id="selfWait" class="mirror" autoplay playsinline muted poster="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></video><div class="camoff"><svg class="i"><use href="#i-cam-off"/></svg></div></div>
+      <div class="dots"></div>
+      <div class="face empty"><svg class="i"><use href="#i-heart"/></svg></div>
+    </div>
+    <p id="status">Waiting for the other person…</p>
+    <p class="hint">The call starts as soon as they join.</p>
+  </div>
+  <div id="chip" role="status"><i class="dot"></i><span id="chipText">Waiting</span></div>
+  <div id="me">
+    <video id="local" class="mirror" autoplay playsinline muted poster="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></video>
+    <div class="camoff"><svg class="i"><use href="#i-cam-off"/></svg></div>
+    <div class="badge"><svg class="i"><use href="#i-mic-off"/></svg></div>
+  </div>
+  <nav id="bar">
+    <button id="mic" class="ctl" aria-label="Mute" title="Mute"><svg class="i"><use href="#i-mic"/></svg></button>
+    <button id="cam" class="ctl" aria-label="Turn camera off" title="Camera"><svg class="i"><use href="#i-cam"/></svg></button>
+    <button id="screen" class="ctl" aria-label="Share screen" title="Share screen"><svg class="i"><use href="#i-screen"/></svg></button>
+    <button id="leave" class="ctl leave" aria-label="Leave call" title="Leave"><svg class="i"><use href="#i-hangup"/></svg></button>
+  </nav>
+</section>
 
 <div id="upd" hidden role="dialog" aria-modal="true" aria-labelledby="updTitle">
   <div class="box">
-    <b id="updTitle">Update available</b>
+    <div class="head"><div class="ic"><svg class="i"><use href="#i-download"/></svg></div><b id="updTitle">Update available</b></div>
     <p id="updText"></p>
     <div id="updBar"><i></i></div>
-    <div id="updBtns"><button id="updLater">Later</button><button id="updGo">Update</button></div>
+    <div id="updBtns"><button id="updLater" class="btn">Later</button><button id="updGo" class="btn go">Update</button></div>
   </div>
 </div>
 
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js" integrity="sha384-nlUQ8ZqCbvStErob+biJNzSgltf6urV3VGqhfIfzhmg9RXmpeRm76ELw0pYnKlTR" crossorigin="anonymous"></script>
 <script>
 const $ = id => document.getElementById(id);
-let peer, call, local, camTrack, screenTrack, me, other;
+let peer, call, local, camTrack, screenTrack, me, other, since, tick, idle;
 
 // Room "abc" has exactly two slots: rxconnect-abc-1 and rxconnect-abc-2. Whoever comes first waits alone.
 const slotId = (room, n) => 'rxconnect-' + room.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + n;
 console.assert(slotId('Me & Her!', 1) === 'rxconnect-me-her--1', 'slotId');
 
-$('room').value = decodeURIComponent(location.hash.slice(1)) || localStorage.getItem('rxroom') || '';
+// A button shows one icon and label for each state, e.g. mic on / muted.
+function setBtn(btn, icon, label, cls) {
+  btn.firstElementChild.firstElementChild.setAttribute('href', '#i-' + icon);
+  btn.setAttribute('aria-label', label);
+  btn.title = label;
+  btn.classList.remove('on', 'off');
+  if (cls) btn.classList.add(cls);
+}
+
+// Splash: once per app launch (leaving a call reloads the page, and it shouldn't replay then). Tap to skip.
+(() => {
+  const splash = $('splash');
+  let seen = false;
+  try { seen = sessionStorage.getItem('rxSplash') === '1'; sessionStorage.setItem('rxSplash', '1'); } catch {}
+  const end = () => {
+    if (!splash.isConnected || splash.classList.contains('out')) return;
+    document.body.classList.add('ready');
+    splash.classList.add('out');
+    setTimeout(() => splash.remove(), 650);
+  };
+  if (seen || matchMedia('(prefers-reduced-motion: reduce)').matches) { document.body.classList.add('ready'); splash.remove(); return; }
+  [...'rxConnect'].forEach((ch, i) => {
+    const span = document.createElement('span');
+    span.textContent = ch;
+    span.style.animationDelay = (1.25 + i * 0.045) + 's';
+    $('splashName').append(span);
+  });
+  splash.onclick = end;
+  setTimeout(end, 2600);
+})();
+
+let saved = '';
+try { saved = localStorage.getItem('rxroom') || ''; } catch {}
+$('room').value = decodeURIComponent(location.hash.slice(1)) || saved;
 $('go').onclick = async () => {
   const room = $('room').value.trim();
   if (!room) return $('room').focus();
+  sound.join();
   try { localStorage.setItem('rxroom', room); } catch {}
   $('join').style.display = 'none';
   $('call').style.display = 'block';
   await startMedia();
+  if (window.RxAudio) { RxAudio.inCall(room); tellApp(); } // Android: the "Calling on <room>" notification
   join(room, 1);
 };
-$('room').onkeydown = e => e.key === 'Enter' && $('go').click();
+// Android: keep the notification's Mute / Camera buttons in step with the page's.
+function tellApp() {
+  const mic = local.getAudioTracks()[0];
+  window.RxAudio && RxAudio.callState(!mic || !mic.enabled, !camTrack.enabled);
+}
+$('room').onkeydown = e => { if (e.key === 'Enter') $('go').click(); }; // no return value: returning false would block every other key
 
 async function startMedia() {
-  const opts = [{ video: true, audio: true }, { audio: true }, {}];
+  const app = window.RxAudio; // Android app: only the camera comes from here, the mic from the app (nativeMic)
+  const opts = app ? [{ video: true }, {}] : [{ video: true, audio: mic }, { audio: mic }, {}];
   for (const o of opts) {
     try { local = Object.keys(o).length ? await navigator.mediaDevices.getUserMedia(o) : new MediaStream(); break; } catch {}
   }
+  if (app) { const t = await nativeMic(); t && local.addTrack(t); }
   camTrack = local.getVideoTracks()[0];
   if (!camTrack) { // no webcam: send a black frame so screen share still has a video track to swap into
     const c = Object.assign(document.createElement('canvas'), { width: 640, height: 480 });
     c.getContext('2d').fillRect(0, 0, 640, 480);
     camTrack = c.captureStream(1).getVideoTracks()[0];
     local.addTrack(camTrack);
-    $('cam').classList.add('off'); $('cam').disabled = true;
+    setBtn($('cam'), 'cam-off', 'No camera', 'off'); $('cam').disabled = true;
+    $('call').classList.add('nocam');
   }
-  if (!local.getAudioTracks().length) { $('mic').classList.add('off'); $('mic').disabled = true; }
-  $('local').srcObject = local;
-  if (!navigator.mediaDevices.getDisplayMedia) $('screen').style.display = 'none'; // Android browsers can't share screen
+  if (!local.getAudioTracks().length) { setBtn($('mic'), 'mic-off', 'No microphone', 'off'); $('mic').disabled = true; $('call').classList.add('muted'); }
+  // Video only: on Android a <video> whose stream has audio takes full audio focus (pausing music) even when muted.
+  showSelf(camTrack);
+  if (!navigator.mediaDevices.getDisplayMedia) $('screen').hidden = true; // Android can't share its screen
 }
+
+// WebRTC's default Opus audio is ~32 kbps mono "phone call" quality. Each side's SDP tells the other what it may
+// send, so both ask for 128 kbps (stereo allowed) with in-band FEC to cover lost packets.
+function hifi(sdp) {
+  const pt = (sdp.match(/a=rtpmap:(\d+) opus\/48000/) || [])[1];
+  if (!pt) return sdp;
+  return sdp.replace(new RegExp('a=fmtp:' + pt + ' (.*)'), (_, params) => 'a=fmtp:' + pt + ' ' + params.split(';')
+    .filter(p => !/^\s*(stereo|sprop-stereo|maxaveragebitrate|useinbandfec)=/.test(p))
+    .concat('stereo=1', 'sprop-stereo=1', 'maxaveragebitrate=128000', 'useinbandfec=1').join(';'));
+}
+console.assert(hifi('a=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=1\r\n') ===
+  'a=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;stereo=1;sprop-stereo=1;maxaveragebitrate=128000;useinbandfec=1\r\n', 'hifi');
+const callOpts = { sdpTransform: hifi };
+const mic = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, sampleRate: 48000 };
 
 function join(room, n) {
   me = slotId(room, n); other = slotId(room, 3 - n);
   peer = new Peer(me);
   peer.on('open', () => { setStatus('Waiting for the other person…'); dial(); });
   peer.on('call', c => {
-    if (n === 2 && call) return c.close(); // both dialed at once: slot 2's own call wins, slot 1 takes it
-    c.answer(local); attach(c);
+    // Both dialed at once: slot 2's own fresh call wins and slot 1 takes it. But a dial stuck unanswered for 5 s
+    // (it went to a dead slot 1 after a crash or reinstall) must give way, or the real caller is refused forever.
+    if (n === 2 && call && (call.open || Date.now() - call.since < 5000)) return c.close();
+    c.since = Date.now();
+    c.answer(local, callOpts); attach(c);
   });
+  // Waiting alone: redial every 5 s unless a call is connected or still being set up (under 5 s old). Whatever went
+  // wrong (a call refused because both dialed at once, a dial to a dead slot after a crash), two people in the same
+  // room always end up connected.
+  const mine = peer;
+  const retry = setInterval(() => {
+    if (mine.destroyed) return clearInterval(retry);
+    if (!mine.open || $('call').classList.contains('live')) return;
+    if (call && (call.open || Date.now() - call.since < 5000)) return;
+    dial();
+  }, 5000);
   peer.on('disconnected', () => peer.destroyed || peer.reconnect());
   peer.on('error', e => {
     if (e.type === 'unavailable-id') {
@@ -126,12 +362,16 @@ function join(room, n) {
   });
 }
 
-function dial() { attach(peer.call(other, local)); }
+function dial() {
+  const c = peer.call(other, local, callOpts);
+  c.since = Date.now();
+  attach(c);
+}
 
 function attach(c) {
   if (call && call !== c) call.close();
   call = c;
-  c.on('stream', s => { $('remote').srcObject = s; setStatus(''); });
+  c.on('stream', s => { playRemote(s); setStatus(''); });
   const gone = () => {
     if (call !== c) return;
     call = null; $('remote').srcObject = null;
@@ -141,44 +381,211 @@ function attach(c) {
   c.on('error', gone);
   // PeerJS doesn't always fire 'close' when the other side drops (closed tab, lost signal).
   const pc = c.peerConnection;
-  pc && pc.addEventListener('iceconnectionstatechange', () => {
+  if (!pc) return;
+  pc.addEventListener('iceconnectionstatechange', () => {
     if (['failed', 'closed'].includes(pc.iceConnectionState)) gone();
   });
+  // When the other side vanishes without hanging up (app killed, phone off), the connection state can stay "fine"
+  // for minutes, frozen on their last frame. A live call always receives data (even muted or camera off), so 6 s
+  // with nothing new arriving means they're gone.
+  let last = -1, quiet = 0;
+  const watch = setInterval(async () => {
+    if (call !== c) return clearInterval(watch);
+    let bytes = 0;
+    (await pc.getStats()).forEach(s => { if (s.type === 'inbound-rtp') bytes += s.bytesReceived; });
+    quiet = bytes > last ? 0 : quiet + 1;
+    last = bytes;
+    if (quiet >= 3 && $('call').classList.contains('live')) { gone(); c.close(); }
+  }, 2000);
 }
 
-function setStatus(t) { $('status').textContent = t; $('status').style.display = t ? '' : 'none'; }
+// '' = connected: hide the waiting screen and run the call timer in the chip.
+function setStatus(t) {
+  const live = !t;
+  $('status').textContent = t;
+  $('waiting').style.display = live ? 'none' : '';
+  $('call').classList.toggle('live', live);
+  clearInterval(tick);
+  if (live) { since = Date.now(); tick = setInterval(chip, 1000); }
+  chip(); poke(); duck(live);
+}
+// Android app: turn other apps' audio down (not off) while the call is live.
+function duck(on) { window.RxAudio && RxAudio.callActive(on); }
+
+// Android app: her voice plays through Web Audio and the <video> gets only her picture. WebView takes full audio
+// focus (pausing music) for any playing element whose stream has audio, even muted; Web Audio doesn't, so duck()
+// can just turn the music down. Chrome only feeds a remote stream's audio to Web Audio while some media element
+// holds it, so a muted, never-played <audio> holds it (paused elements don't take focus).
+let audioCtx, voice;
+const ctx = () => audioCtx = audioCtx || new AudioContext({ sampleRate: 48000 });
+
+// Android app: the app records the mic itself (android Mic.java; WebView's own mic would switch Bluetooth headphones
+// to their call profile). 20 ms chunks of 16-bit PCM arrive as base64 on a message port that goes straight to this
+// worklet, so they don't depend on the page's main thread; the worklet turns them into a normal mic track.
+const PCM_WORKLET = `
+const B64 = new Uint8Array(128);
+[...'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'].forEach((c, i) => B64[c.charCodeAt(0)] = i);
+function decode(s) {
+  const bytes = new Uint8Array(s.length / 4 * 3 - (s.endsWith('==') ? 2 : s.endsWith('=') ? 1 : 0));
+  for (let i = 0, j = 0; i < s.length; i += 4) {
+    const v = B64[s.charCodeAt(i)] << 18 | B64[s.charCodeAt(i + 1)] << 12 | B64[s.charCodeAt(i + 2)] << 6 | B64[s.charCodeAt(i + 3)];
+    bytes[j++] = v >> 16; if (j < bytes.length) bytes[j++] = v >> 8 & 255; if (j < bytes.length) bytes[j++] = v & 255;
+  }
+  return new Int16Array(bytes.buffer, 0, bytes.length >> 1);
+}
+registerProcessor('pcm', class extends AudioWorkletProcessor {
+  constructor() {
+    super(); this.q = []; this.at = 0; this.ready = false;
+    this.port.onmessage = e => e.data.onmessage = m => {
+      this.q.push(decode(m.data));
+      if (this.q.length > 10) this.q.splice(0, this.q.length - 3); // fell behind: drop old audio, keep delay low
+    };
+  }
+  process(_, [[out]]) {
+    if (!this.ready) this.ready = this.q.length >= 3; // 60 ms cushion against bursty delivery
+    for (let i = 0; i < out.length && this.ready; i++) {
+      if (!this.q.length) { this.ready = false; break; } // ran dry: silence until the cushion refills
+      out[i] = this.q[0][this.at++] / 32768;
+      if (this.at === this.q[0].length) { this.q.shift(); this.at = 0; }
+    }
+    return true;
+  }
+});`;
+async function nativeMic() {
+  const port = new Promise(resolve => addEventListener('message', function got(e) {
+    if (e.data === 'mic' && e.ports[0]) { removeEventListener('message', got); resolve(e.ports[0]); }
+  }));
+  if (!RxAudio.startMic()) return null; // no mic permission
+  await ctx().audioWorklet.addModule(URL.createObjectURL(new Blob([PCM_WORKLET], { type: 'text/javascript' })));
+  const node = new AudioWorkletNode(audioCtx, 'pcm', { outputChannelCount: [1] });
+  const out = audioCtx.createMediaStreamDestination();
+  node.connect(out);
+  const p = await port;
+  node.port.postMessage(p, [p]);
+  audioCtx.resume();
+  return out.stream.getAudioTracks()[0];
+}
+
+// Her voice's volume: the app turns media volume down during a call (to make other apps quieter) and boosts her by
+// the same amount here; the limiter keeps the boost from distorting.
+let voiceGain;
+function voiceOut() {
+  if (!voiceGain) {
+    voiceGain = audioCtx.createGain();
+    const limiter = audioCtx.createDynamicsCompressor();
+    limiter.threshold.value = -3; limiter.knee.value = 0; limiter.ratio.value = 20;
+    limiter.attack.value = 0.003; limiter.release.value = 0.25;
+    voiceGain.connect(limiter).connect(audioCtx.destination);
+  }
+  return voiceGain;
+}
+window.rxVoiceBoost = x => audioCtx && voiceOut().gain.setTargetAtTime(x, audioCtx.currentTime, 0.2);
+
+const holder = new Audio();
+holder.muted = true;
+function playRemote(s) {
+  // Spinner until her first frame (the video itself fades in with .live).
+  $('call').classList.add('frames');
+  $('remote').addEventListener('playing', () => $('call').classList.remove('frames'), { once: true });
+  if (!window.RxAudio) { $('remote').srcObject = s; return; }
+  $('remote').srcObject = new MediaStream(s.getVideoTracks());
+  holder.srcObject = new MediaStream(s.getAudioTracks());
+  ctx().resume();
+  voice && voice.disconnect();
+  voice = audioCtx.createMediaStreamSource(s);
+  voice.connect(voiceOut());
+}
+function chip() {
+  const s = Math.floor((Date.now() - since) / 1000);
+  $('chipText').textContent = $('call').classList.contains('live')
+    ? Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') : 'Waiting';
+}
+
+// Controls fade out after a few quiet seconds in a live call; any touch, mouse move or key brings them back.
+function poke() {
+  $('call').classList.remove('idle');
+  clearTimeout(idle);
+  if ($('call').classList.contains('live')) idle = setTimeout(() => $('call').classList.add('idle'), 3500);
+}
+['pointermove', 'pointerdown', 'keydown'].forEach(e => addEventListener(e, poke));
+
+// UI sounds, made here with Web Audio (no files): join = two rising notes, quit = the same falling, click = soft tick.
+// Web Audio, not <audio>: on Android it doesn't take audio focus, so music keeps playing.
+function tone(freq, at, dur, vol) {
+  const c = ctx(), o = c.createOscillator(), g = c.createGain(), t = c.currentTime + at;
+  if (c.state === 'suspended') c.resume();
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.012); // no click at the start
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(c.destination);
+  o.start(t);
+  o.stop(t + dur + 0.05);
+}
+const sound = {
+  join: () => { tone(523, 0, 0.22, 0.16); tone(784, 0.11, 0.34, 0.16); },
+  quit: () => { tone(784, 0, 0.22, 0.14); tone(523, 0.11, 0.32, 0.14); },
+  click: () => tone(1200, 0, 0.05, 0.06),
+};
+
+// Shimmer on el until video shows its first frame.
+function loading(el, video) {
+  el.classList.add('loading');
+  video.addEventListener('playing', () => el.classList.remove('loading'), { once: true });
+}
+
+// Your picture: the circle on the waiting screen and the corner tile in a call. Video only (see startMedia).
+function showSelf(track) {
+  for (const v of [$('local'), $('selfWait')]) {
+    loading(v.parentElement, v);
+    v.srcObject = new MediaStream([track]);
+    v.classList.toggle('mirror', track === camTrack);
+  }
+}
 
 function sendVideo(track) {
   const sender = call && call.peerConnection && call.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
   sender && sender.replaceTrack(track);
   local.removeTrack(local.getVideoTracks()[0]);
   local.addTrack(track);
-  $('local').classList.toggle('mirror', track === camTrack);
+  showSelf(track);
+  $('call').classList.toggle('nocam', track === camTrack && !camTrack.enabled);
 }
 
 $('mic').onclick = () => {
+  sound.click();
   const t = local.getAudioTracks()[0];
   t.enabled = !t.enabled;
-  $('mic').classList.toggle('off', !t.enabled);
+  setBtn($('mic'), t.enabled ? 'mic' : 'mic-off', t.enabled ? 'Mute' : 'Unmute', t.enabled ? '' : 'off');
+  $('call').classList.toggle('muted', !t.enabled);
+  tellApp();
 };
 $('cam').onclick = () => {
+  sound.click();
   camTrack.enabled = !camTrack.enabled;
-  $('cam').classList.toggle('off', !camTrack.enabled);
+  setBtn($('cam'), camTrack.enabled ? 'cam' : 'cam-off', camTrack.enabled ? 'Turn camera off' : 'Turn camera on', camTrack.enabled ? '' : 'off');
+  $('call').classList.toggle('nocam', !camTrack.enabled && !screenTrack);
+  tellApp();
 };
 $('screen').onclick = async () => {
+  sound.click();
   if (screenTrack) return stopScreen();
   try { screenTrack = (await navigator.mediaDevices.getDisplayMedia({ video: true })).getVideoTracks()[0]; } catch { return; }
   screenTrack.onended = stopScreen; // user pressed the browser's own "Stop sharing"
   sendVideo(screenTrack);
-  $('screen').classList.add('on');
+  setBtn($('screen'), 'screen', 'Stop sharing', 'on');
 };
 function stopScreen() {
   if (!screenTrack) return;
   screenTrack.stop(); screenTrack = null;
   sendVideo(camTrack);
-  $('screen').classList.remove('on');
+  setBtn($('screen'), 'screen', 'Share screen', '');
 }
-$('leave').onclick = () => { call && call.close(); peer && peer.destroy(); local.getTracks().forEach(t => t.stop()); location.reload(); };
+$('leave').onclick = () => {
+  sound.quit();
+  duck(false); call && call.close(); peer && peer.destroy(); local.getTracks().forEach(t => t.stop());
+  setTimeout(() => location.reload(), 450); // let the quit sound finish
+};
 addEventListener('pagehide', () => { call && call.close(); peer && peer.destroy(); });
 
 // Updates: only inside the apps. The native side (android/ Updater, windows/ update.rs) checks GitHub and calls rxUpdate.*.

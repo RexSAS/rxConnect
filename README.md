@@ -14,4 +14,4 @@ Open the app, type the same room name on both sides, and you're in. The first to
 
 **Release:** commit, then `./release.sh`. It builds the APK and makes release `v<commit count>`; GitHub Actions adds the Windows exe. Keep `android/signing.keystore` safe: updates must be signed with the same key.
 
-**Limits:** anyone who knows the room name can join. Networks that block direct connections (some carriers, strict Wi-Fi) need a TURN relay, which isn't set up. Phones can't share their screen.
+**Limits:** anyone who knows the room name can join. On networks that block direct connections (some carriers, strict Wi-Fi) the call falls back to PeerJS's free relay servers, which pass along the still-encrypted stream but add a little delay. Phones can't share their screen.

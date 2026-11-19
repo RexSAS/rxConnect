@@ -4,11 +4,17 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.media.AudioAttributes;
+import android.media.AudioDeviceInfo;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
+import android.webkit.WebMessage;
+import android.webkit.WebMessagePort;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -37,6 +43,11 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
 
         web.setWebViewClient(new WebViewClient() {
+            @Override public void onPageStarted(WebView v, String url, android.graphics.Bitmap icon) { // left the call (page reload)
+                stopMic();
+                stopService(new Intent(MainActivity.this, CallService.class));
+            }
+
             @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
                 Uri u = r.getUrl();
                 if (!HOST.equals(u.getHost())) return null;
@@ -63,6 +74,7 @@ public class MainActivity extends Activity {
             }
         });
         web.addJavascriptInterface(new Bridge(), "RxNative");
+        web.addJavascriptInterface(new AudioBridge(), "RxAudio");
         onScreen = this;
 
         List<String> ask = new ArrayList<>();
@@ -74,8 +86,6 @@ public class MainActivity extends Activity {
 
     @Override public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
         // Load only now, so the page's getUserMedia sees the final answer.
-        if (has(Manifest.permission.CAMERA) || has(Manifest.permission.RECORD_AUDIO))
-            startForegroundService(new Intent(this, CallService.class));
         web.loadUrl("https://" + HOST + "/index.html");
     }
 
@@ -117,7 +127,118 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** null: she backed out of the system's install screen. */
+    // --- Audio: the mic is recorded natively (see Mic) and other apps are turned down during a call ---
+
+    /** What the page can call as RxAudio.*. */
+    class AudioBridge {
+        /** While a call is live, other apps' audio (music, videos) is turned down instead of stopped. */
+        @JavascriptInterface public void callActive(boolean on) { runOnUiThread(() -> duck(on)); }
+
+        /** Starts the native mic; its chunks reach the page through a message port posted as a "mic" message. */
+        @JavascriptInterface public boolean startMic() {
+            if (!has(Manifest.permission.RECORD_AUDIO)) return false;
+            runOnUiThread(MainActivity.this::startMic);
+            return true;
+        }
+
+        @JavascriptInterface public void stopMic() { runOnUiThread(MainActivity.this::stopMic); }
+
+        /** Joined a room: the call notification appears (CallService); it goes when the page reloads on leaving. */
+        @JavascriptInterface public void inCall(String room) { runOnUiThread(() -> CallService.start(MainActivity.this, room)); }
+
+        @JavascriptInterface public void callState(boolean muted, boolean camOff) {
+            runOnUiThread(() -> CallService.update(MainActivity.this, muted, camOff));
+        }
+    }
+
+    /** A notification button: press the same button in the page ("mic", "cam" or "leave"). */
+    static void press(String button) {
+        MainActivity a = onScreen;
+        if (a != null && button.matches("mic|cam|leave")) a.js("$('" + button + "').click()");
+    }
+
+    Mic mic;
+
+    void startMic() {
+        stopMic();
+        WebMessagePort[] ports = web.createWebMessageChannel();
+        web.postWebMessage(new WebMessage("mic", new WebMessagePort[] {ports[1]}), Uri.parse("https://" + HOST));
+        try {
+            // Ports must be used on the UI thread; 50 small posts a second is nothing for it.
+            mic = new Mic(getSystemService(AudioManager.class), chunk -> runOnUiThread(() -> ports[0].postMessage(new WebMessage(chunk))));
+        } catch (RuntimeException e) {
+            android.util.Log.w("rxConnect", "mic", e);
+            ports[0].close();
+        }
+    }
+
+    void stopMic() {
+        if (mic != null) mic.stop();
+        mic = null;
+    }
+
+    AudioFocusRequest focus;
+
+    void duck(boolean on) {
+        AudioManager am = getSystemService(AudioManager.class);
+        if (focus == null) focus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                .setAudioAttributes(new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                .build();
+        if (on) {
+            am.requestAudioFocus(focus); // asks other apps to duck; Spotify ignores it here (see lowerOthers)
+            lowerOthers(am);
+        } else {
+            am.abandonAudioFocusRequest(focus);
+            restoreOthers(am);
+        }
+    }
+
+    int musicBefore = -1, musicDuring;
+
+    /**
+     * Android doesn't actually duck Spotify on this phone (it plays through AAudio, which the system can't turn down),
+     * so: media volume 2 steps down for the call, and her voice boosted in the page by the same amount, so only the
+     * other apps end up quieter.
+     */
+    void lowerOthers(AudioManager am) {
+        if (musicBefore >= 0) return;
+        int v = am.getStreamVolume(AudioManager.STREAM_MUSIC);
+        if (v <= 2) return; // already quiet
+        musicBefore = v;
+        musicDuring = v - 2;
+        am.setStreamVolume(AudioManager.STREAM_MUSIC, musicDuring, 0);
+        js("window.rxVoiceBoost && rxVoiceBoost(" + boost(am, v, musicDuring) + ")");
+    }
+
+    void restoreOthers(AudioManager am) {
+        if (musicBefore < 0) return;
+        // Put it back, unless you changed the volume yourself during the call: then your choice stays.
+        if (am.getStreamVolume(AudioManager.STREAM_MUSIC) == musicDuring)
+            am.setStreamVolume(AudioManager.STREAM_MUSIC, musicBefore, 0);
+        musicBefore = -1;
+        js("window.rxVoiceBoost && rxVoiceBoost(1)");
+    }
+
+    /** How much louder her voice must be to sound the same after the drop; ×2 (about 2 typical steps) if unknown. */
+    static float boost(AudioManager am, int from, int to) {
+        if (Build.VERSION.SDK_INT >= 28) {
+            int out = AudioDeviceInfo.TYPE_BUILTIN_SPEAKER;
+            for (AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_OUTPUTS))
+                if (d.getType() == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || d.getType() == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                        || d.getType() == AudioDeviceInfo.TYPE_WIRED_HEADSET || d.getType() == AudioDeviceInfo.TYPE_USB_HEADSET) out = d.getType();
+            try {
+                float db = am.getStreamVolumeDb(AudioManager.STREAM_MUSIC, from, out) - am.getStreamVolumeDb(AudioManager.STREAM_MUSIC, to, out);
+                if (db > 0 && db < 20) return (float) Math.pow(10, db / 20);
+            } catch (RuntimeException e) {
+                // fall through to the estimate
+            }
+        }
+        return 2f;
+    }
+
+    /** null: the install was cancelled from the system's install screen. */
     static void updateFailed(String why) {
         MainActivity a = onScreen;
         if (a != null) a.js(why == null ? "rxUpdate.cancel()" : "rxUpdate.failed(" + JSONObject.quote(why) + ")");
@@ -127,6 +248,8 @@ public class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         if (onScreen == this) onScreen = null;
+        duck(false);
+        stopMic();
         stopService(new Intent(this, CallService.class));
         web.destroy();
         super.onDestroy();

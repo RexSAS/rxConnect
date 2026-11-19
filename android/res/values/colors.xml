@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Call notification buttons (light notification shade); values-night has the dark ones. -->
+<resources>
+    <color name="btn_bg">#0D000000</color>
+    <color name="btn_line">#33000000</color>
+    <color name="btn_fill">#202124</color>
+    <color name="btn_icon">#202124</color>
+    <color name="btn_icon_on">#FFFFFF</color>
+</resources>
