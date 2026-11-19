@@ -6,7 +6,7 @@
   "build": { "frontendDist": "../web" },
   "app": {
     "withGlobalTauri": true,
-    "windows": [{ "title": "rxConnect", "width": 1100, "height": 720, "useHttpsScheme": true }],
+    "windows": [{ "title": "rxConnect", "width": 1100, "height": 720, "useHttpsScheme": true, "decorations": false, "backgroundColor": "#0b0c10" }],
     "security": { "csp": null }
   },
   "bundle": {

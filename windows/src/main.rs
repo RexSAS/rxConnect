@@ -9,3 +9,4 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("rxConnect failed to start");
 }
+

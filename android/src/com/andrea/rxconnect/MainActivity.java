@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.PictureInPictureParams;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.res.Configuration;
 import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
@@ -11,11 +12,13 @@ import android.media.AudioDeviceInfo;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.net.Uri;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Rational;
 import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
+import android.webkit.ValueCallback;
 import android.webkit.WebMessage;
 import android.webkit.WebMessagePort;
 import android.webkit.WebChromeClient;
@@ -67,6 +70,19 @@ public class MainActivity extends Activity {
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
+            // The chat's photo/video button: WebView shows no file picker by itself.
+            @Override public boolean onShowFileChooser(WebView v, ValueCallback<Uri[]> cb, FileChooserParams params) {
+                if (pick != null) pick.onReceiveValue(null);
+                pick = cb;
+                try {
+                    startActivityForResult(params.createIntent(), PICK);
+                } catch (android.content.ActivityNotFoundException e) {
+                    pick = null;
+                    return false;
+                }
+                return true;
+            }
+
             @Override public void onPermissionRequest(final PermissionRequest req) {
                 runOnUiThread(() -> {
                     // Grant the page only what Android already granted us; the page falls back to audio-only.
@@ -88,6 +104,15 @@ public class MainActivity extends Activity {
         ask.add(Manifest.permission.RECORD_AUDIO);
         if (Build.VERSION.SDK_INT >= 33) ask.add(Manifest.permission.POST_NOTIFICATIONS);
         requestPermissions(ask.toArray(new String[0]), 1);
+    }
+
+    static final int PICK = 2;
+    ValueCallback<Uri[]> pick;
+
+    @Override protected void onActivityResult(int code, int result, Intent data) {
+        if (code != PICK || pick == null) return;
+        pick.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result, data));
+        pick = null;
     }
 
     @Override public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
@@ -118,7 +143,7 @@ public class MainActivity extends Activity {
     // The page hides its controls in the small window (.pip in index.html).
     @Override public void onPictureInPictureModeChanged(boolean on, Configuration c) {
         super.onPictureInPictureModeChanged(on, c);
-        js("document.body.classList.toggle('pip'," + on + ")");
+        js("document.body.classList.toggle('pip'," + on + "); $('call').classList.remove('swap')"); // the small window shows her
     }
 
     // --- Updates: the page shows the question and the bar (rxUpdate in index.html), Updater does the work ---
@@ -128,6 +153,16 @@ public class MainActivity extends Activity {
 
     /** What the page can call as RxNative.*; these run on a binder thread, so the network work goes to its own. */
     class Bridge {
+        /** Battery as JSON {level: 0-100, charging}, for the low-battery popup in a call (rxBattery in index.html). */
+        @JavascriptInterface public String battery() {
+            Intent i = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED)); // the last broadcast, no receiver kept
+            if (i == null) return "null";
+            int level = i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1), scale = i.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
+            int status = i.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+            boolean charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL;
+            return level < 0 ? "null" : "{\"level\":" + level * 100 / scale + ",\"charging\":" + charging + "}";
+        }
+
         /** This app's version (the release number N, see build.sh), for the settings. */
         @JavascriptInterface public String version() {
             try {

@@ -77,6 +77,18 @@
   @keyframes pop { from { opacity:0; transform:scale(.85); } }
   #local { width:100%; height:100%; object-fit:cover; display:block; }
   #local.mirror { transform:scaleX(-1); }
+  /* Your tile in the corner you dragged it to (data-corner, see the drag code): bottom ones above the call buttons, top-left under the timer. */
+  #me { touch-action:none; }
+  #call { user-select:none; -webkit-user-select:none; } /* dragging your tile mustn't select the timer's text */
+  #me[data-corner$=l] { left:16px; right:auto; }
+  #me[data-corner=tl] { top:calc(64px + env(safe-area-inset-top)); }
+  #me[data-corner^=b] { top:auto; bottom:calc(104px + env(safe-area-inset-bottom)); }
+  /* Tap your tile to swap: you full screen as she sees you (not mirrored, not cropped), her in the tile. Tap her to swap back. */
+  #me, .swap #remote { cursor:pointer; }
+  .swap #me { inset:0; width:auto; aspect-ratio:auto; border-radius:0; box-shadow:none; background:#000; }
+  .swap #local { object-fit:contain; transform:none; }
+  .swap #remote { position:absolute; right:16px; top:calc(16px + env(safe-area-inset-top)); width:min(30vw,220px); height:auto; aspect-ratio:3/4; border-radius:18px; object-fit:cover !important; background:var(--panel-2); box-shadow:0 10px 30px #0008; z-index:2; }
+  .swap #them .off { display:none; }
   .camoff { position:absolute; inset:0; display:grid; place-items:center; background:var(--panel-2); color:var(--muted); opacity:0; transition:opacity .25s; }
   .nocam .camoff { opacity:1; }
   .pip #chip, .pip #me, .pip #bar, .pip #waiting .hint { display:none; } /* Android floating window: just her */  #call:not(.live) #me { display:none; }
@@ -88,7 +100,8 @@
   .themCamOff #them .off { opacity:1; }
   #them .badge { position:absolute; left:50%; top:calc(16px + env(safe-area-inset-top)); display:flex; align-items:center; gap:6px; padding:8px 12px; border-radius:999px; background:var(--danger); color:#fff; font-size:14px; transform:translateX(-50%) scale(0); transition:transform .25s var(--ease); }
   #them .badge svg { width:16px; height:16px; }
-  .themMuted #them .badge { transform:translateX(-50%) scale(1); } /* while waiting you're the circle in the middle */
+  .themMuted #them .badge { transform:translateX(-50%) scale(1); }
+  #toast { position:absolute; left:50%; top:calc(64px + env(safe-area-inset-top)); max-width:calc(100% - 32px); padding:10px 16px; border-radius:999px; background:#16181fe6; border:1px solid #ffb02e66; color:var(--text); font-size:14px; white-space:nowrap; transform:translateX(-50%); animation:drop .4s var(--ease) both; z-index:5; } /* while waiting you're the circle in the middle */
   #me .badge { position:absolute; left:8px; bottom:8px; width:28px; height:28px; border-radius:50%; display:grid; place-items:center; background:var(--danger); transform:scale(0); transition:transform .25s var(--ease); }
   #me .badge svg { width:16px; height:16px; color:#fff; }
   .muted #me .badge { transform:scale(1); }
@@ -136,11 +149,52 @@
   .btn:active { transform:scale(.95); }
   .btn.go { background:var(--accent); color:#fff; font-weight:600; }
 
-  @media (max-width:480px) {
-    .ctl { width:48px; height:48px; }
-    .ctl.leave { width:60px; }
-    #bar { gap:8px; padding:8px; }
+  @media (max-width:480px) { /* seven buttons on a 360 px phone */
+    .ctl { width:40px; height:40px; }
+    .ctl svg { width:20px; height:20px; }
+    .ctl.leave { width:52px; }
+    #bar { gap:6px; padding:6px; }
   }
+
+  /* ---------- Window buttons (Windows app: no system title bar, see the script) ---------- */
+  #win { position:fixed; top:12px; right:12px; display:flex; gap:4px; padding:4px; border-radius:999px; background:#16181f8c; border:1px solid #ffffff1a; backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); z-index:100; transition:opacity .35s; }
+  #win button { width:28px; height:28px; border:0; border-radius:50%; display:grid; place-items:center; background:none; color:var(--muted); transition:background .15s, color .15s; }
+  #win button:hover { background:#ffffff1f; color:var(--text); }
+  #win button.x:hover { background:#ff4d5a; color:#fff; }
+  #win svg { width:12px; height:12px; stroke-width:1.6; }
+  body:has(#call.idle) #win { opacity:0; }
+  body:has(#call.idle) #win:hover { opacity:1; }
+  /* Clear of the buttons: the gear, your top-corner tile, her tile when swapped, the chat header. */
+  .win #gear { right:126px; top:9px; } /* centred on the button pill */
+  .win #me[data-corner=tr], .win .swap #remote { top:calc(60px + env(safe-area-inset-top)); }
+  .win #chat header { padding-top:56px; }
+
+  /* ---------- Chat ---------- */
+  .ctl { position:relative; }
+  .ctl .unread { position:absolute; top:4px; right:4px; width:10px; height:10px; border-radius:50%; background:var(--accent-2); box-shadow:0 0 0 2px #16181f; transform:scale(0); transition:transform .25s var(--ease); }
+  #chatBtn.unseen .unread { transform:scale(1); }
+  #chat { position:absolute; right:0; top:0; bottom:0; width:min(360px,100%); display:flex; flex-direction:column; background:#101217f2; border-left:1px solid var(--line); z-index:6; animation:slidein .3s var(--ease) both; user-select:text; -webkit-user-select:text; }
+  @keyframes slidein { from { transform:translateX(100%); } }
+  #chat header { display:flex; align-items:center; justify-content:space-between; padding:calc(12px + env(safe-area-inset-top)) 12px 8px 18px; font-size:17px; }
+  #msgs { flex:1; overflow-y:auto; padding:8px 12px; display:flex; flex-direction:column; gap:6px; }
+  .msg { max-width:80%; padding:8px 12px; border-radius:16px; background:var(--panel-2); align-self:flex-start; overflow-wrap:anywhere; white-space:pre-wrap; animation:pop .25s var(--ease) both; }
+  .msg.mine { align-self:flex-end; background:var(--accent); color:#fff; }
+  .msg.media { padding:4px; }
+  .msg img, .msg video { display:block; max-width:100%; max-height:260px; border-radius:12px; }
+  #chatForm { display:flex; align-items:center; gap:6px; padding:10px 12px calc(10px + env(safe-area-inset-bottom)); border-top:1px solid var(--line); }
+  #chatText { flex:1; min-width:0; padding:10px 14px; border-radius:999px; border:1px solid var(--line); background:var(--panel-2); color:var(--text); font:inherit; outline:none; }
+  #chatText:focus { border-color:var(--accent); }
+  .icon { width:40px; height:40px; flex:none; display:grid; place-items:center; border:0; border-radius:50%; background:none; color:var(--muted); cursor:pointer; }
+  .icon:hover { color:var(--text); }
+  .icon.send { background:var(--accent); color:#fff; }
+  .icon.send svg { width:18px; height:18px; }
+  /* Messages while the chat is closed float bottom-left for a few seconds; a tap opens the chat. */
+  #floats { position:absolute; left:16px; bottom:calc(104px + env(safe-area-inset-bottom)); display:flex; flex-direction:column; align-items:flex-start; gap:8px; max-width:min(320px, calc(100% - 32px)); pointer-events:none; z-index:5; }
+  .float { pointer-events:auto; cursor:pointer; max-width:100%; padding:10px 14px; border-radius:16px; background:#16181fe6; border:1px solid var(--line); box-shadow:0 8px 24px #0008; overflow-wrap:anywhere; animation:pop .3s var(--ease) both; transition:opacity .4s, transform .4s; }
+  .float.media { padding:4px; }
+  .float.out { opacity:0; transform:translateY(8px); }
+  .float img, .float video { display:block; max-width:220px; max-height:150px; border-radius:12px; }
+  .pip #chat, .pip #floats { display:none; }
   /* ---------- Splash: two drops melt into one, the heart beats, the name rises ---------- */
   body:not(.ready) .card { animation-play-state:paused; }
   #splash { position:fixed; inset:0; z-index:20; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; background:radial-gradient(circle at 50% 42%, #1c1420, var(--bg) 70%); transition:opacity .5s ease, transform .6s var(--ease); }
@@ -178,6 +232,12 @@
   <symbol id="i-screen" viewBox="0 0 24 24"><path d="m9 10 3-3 3 3"/><path d="M12 13V7"/><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M12 17v4"/><path d="M8 21h8"/></symbol>
   <symbol id="i-hangup" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.996.996 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.39.39.39 1.02 0 1.41l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28-.79-.74-1.69-1.36-2.66-1.85a.996.996 0 0 1-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></symbol>
   <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-deaf" viewBox="0 0 24 24"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></symbol>
+  <symbol id="i-deaf-off" viewBox="0 0 24 24"><path d="M21 14h-1.34"/><path d="M9 21H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 15.86-5.8"/><path d="M3 14h3a2 2 0 0 1 2 2v3"/><path d="M21 12v7a2 2 0 0 1-.6 1.4"/><path d="m2 2 20 20"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
 </svg>
 
@@ -221,7 +281,7 @@
   <video id="remote" autoplay playsinline poster="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></video>
   <div id="them">
     <div class="off"><svg class="i"><use href="#i-cam-off"/></svg></div>
-    <div class="badge"><svg class="i"><use href="#i-mic-off"/></svg>Muted</div>
+    <div class="badge"><svg class="i"><use href="#i-mic-off"/></svg><span id="themWhat">Muted</span></div>
   </div>
   <div id="waiting">
     <div class="pair">
@@ -232,6 +292,7 @@
     <p id="status">Waiting for the other person…</p>
     <p class="hint">The call starts as soon as they join.</p>
   </div>
+  <div id="toast" role="status" hidden></div>
   <div id="chip" role="status"><i class="dot"></i><span id="chipText">Waiting</span></div>
   <div id="me">
     <video id="local" class="mirror" autoplay playsinline muted poster="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></video>
@@ -240,11 +301,23 @@
   </div>
   <nav id="bar">
     <button id="mic" class="ctl" aria-label="Mute" title="Mute"><svg class="i"><use href="#i-mic"/></svg></button>
+    <button id="deaf" class="ctl" aria-label="Deafen" title="Deafen"><svg class="i"><use href="#i-deaf"/></svg></button>
     <button id="cam" class="ctl" aria-label="Turn camera off" title="Camera"><svg class="i"><use href="#i-cam"/></svg></button>
     <button id="screen" class="ctl" aria-label="Share screen" title="Share screen"><svg class="i"><use href="#i-screen"/></svg></button>
+    <button id="chatBtn" class="ctl" aria-label="Chat" title="Chat"><svg class="i"><use href="#i-chat"/></svg><i class="unread"></i></button>
     <button id="callGear" class="ctl" aria-label="Audio settings" title="Audio settings"><svg class="i"><use href="#i-gear"/></svg></button>
     <button id="leave" class="ctl leave" aria-label="Leave call" title="Leave"><svg class="i"><use href="#i-hangup"/></svg></button>
   </nav>
+  <div id="floats" aria-live="polite"></div>
+  <aside id="chat" hidden aria-label="Chat">
+    <header><b>Chat</b><button id="chatClose" class="icon" aria-label="Close chat"><svg class="i"><use href="#i-x"/></svg></button></header>
+    <div id="msgs"></div>
+    <form id="chatForm">
+      <label class="icon" aria-label="Send a photo or video" title="Photo or video"><svg class="i"><use href="#i-clip"/></svg><input id="chatFile" type="file" accept="image/*,video/*" hidden></label>
+      <input id="chatText" autocomplete="off" placeholder="Message" maxlength="2000" aria-label="Message">
+      <button class="icon send" aria-label="Send"><svg class="i"><use href="#i-send"/></svg></button>
+    </form>
+  </aside>
 </section>
 
 <div id="set" hidden role="dialog" aria-modal="true" aria-labelledby="setTitle">
@@ -269,6 +342,21 @@
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js" integrity="sha384-nlUQ8ZqCbvStErob+biJNzSgltf6urV3VGqhfIfzhmg9RXmpeRm76ELw0pYnKlTR" crossorigin="anonymous"></script>
 <script>
 const $ = id => document.getElementById(id);
+
+// Windows app: no system title bar (decorations off in windows/tauri.conf.json). Its buttons are drawn here, and the
+// window moves by dragging any empty background (data-tauri-drag-region; double-click maximizes).
+if (window.__TAURI__) {
+  document.body.classList.add('win');
+  document.body.insertAdjacentHTML('beforeend', `<div id="win">
+    <button id="winMin" aria-label="Minimize" title="Minimize"><svg class="i" viewBox="0 0 12 12"><path d="M2 6h8"/></svg></button>
+    <button id="winMax" aria-label="Maximize" title="Maximize"><svg class="i" viewBox="0 0 12 12"><rect x="2" y="2" width="8" height="8" rx="2"/></svg></button>
+    <button id="winClose" class="x" aria-label="Close" title="Close"><svg class="i" viewBox="0 0 12 12"><path d="m3 3 6 6M9 3 3 9"/></svg></button></div>`);
+  const w = __TAURI__.window.getCurrentWindow();
+  $('winMin').onclick = () => w.minimize();
+  $('winMax').onclick = () => w.toggleMaximize();
+  $('winClose').onclick = () => w.close();
+  for (const id of ['join', 'call', 'waiting', 'remote']) $(id).setAttribute('data-tauri-drag-region', '');
+}
 let peer, call, local, camTrack, screenTrack, me, other, since, tick, idle;
 
 // Room "abc" has exactly two slots: rxconnect-abc-1 and rxconnect-abc-2. Whoever comes first waits alone.
@@ -317,6 +405,7 @@ $('go').onclick = async () => {
   $('join').style.display = 'none';
   $('call').style.display = 'block';
   await startMedia();
+  watchBattery();
   if (window.RxAudio) { RxAudio.inCall(room); tellApp(); } // Android: the "Calling on <room>" notification
   join(room, 1);
 };
@@ -325,12 +414,44 @@ $('go').onclick = async () => {
 let tell;
 function openTell() {
   tell && tell.close();
-  tell = peer.connect(other, { serialization: 'json' });
+  tell = peer.connect(other, { serialization: 'binary' }); // binary: chat photos and videos as ArrayBuffers
   tell.on('open', sendState);
 }
 function sendState() {
   const c = $('call').classList;
-  tell && tell.open && tell.send({ muted: c.contains('muted'), camOff: c.contains('nocam') });
+  tell && tell.open && tell.send({ muted: c.contains('muted'), camOff: c.contains('nocam'), sharing: !!screenTrack, deaf, battery });
+}
+
+// Low battery, yours or hers: a popup for both of you at 20% and again at 10%, not while charging. Read every minute
+// and sent with the state above. A PC without a battery reports charging, so it never warns.
+let battery = null;
+const warned = { me: 101, them: 101 }; // lowest level already warned about
+function lowBattery(who, b) {
+  if (b.charging) return void (warned[who] = 101);
+  const at = [10, 20].find(t => b.level <= t && t < warned[who]); // the lowest one crossed: at 9% warn once, not twice
+  if (at === undefined) return;
+  warned[who] = at;
+  toast((who === 'me' ? 'Your' : 'Their') + ' battery is low: ' + b.level + '%');
+}
+async function readBattery() {
+  try {
+    if (window.RxNative && RxNative.battery) return JSON.parse(RxNative.battery());
+    if (navigator.getBattery) { const b = await navigator.getBattery(); return { level: Math.round(b.level * 100), charging: b.charging }; }
+  } catch {}
+  return null;
+}
+async function watchBattery() {
+  battery = await readBattery();
+  if (battery) { lowBattery('me', battery); sendState(); }
+  setTimeout(watchBattery, 60000);
+}
+let toastTimer;
+function toast(text) {
+  const t = $('toast');
+  t.textContent = text; t.hidden = false;
+  t.style.animation = 'none'; void t.offsetWidth; t.style.animation = ''; // replay the drop-in
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 6000);
 }
 // Keep the other person and (Android) the notification's Mute / Camera buttons in step with the page.
 function tellApp() {
@@ -436,8 +557,13 @@ function join(room, n) {
     dial();
   }, 5000);
   peer.on('connection', d => d.on('data', st => {
-    $('call').classList.toggle('themMuted', !!st.muted);
+    if (!st || typeof st !== 'object') return;
+    if (st.kind) return gotMsg(st);
+    $('call').classList.toggle('themMuted', !!(st.muted || st.deaf));
+    $('themWhat').textContent = st.deaf ? 'Deafened' : 'Muted';
     $('call').classList.toggle('themCamOff', !!st.camOff);
+    st.battery && lowBattery('them', st.battery);
+    theyShare = !!st.sharing; fit();
   }));
   peer.on('disconnected', () => peer.destroyed || peer.reconnect());
   peer.on('error', e => {
@@ -473,27 +599,83 @@ function sharpen(pc) {
   }
 }
 
+// Her voice through a 120 ms jitter buffer (Chrome otherwise keeps it as short as it can): uneven packet arrival then
+// doesn't make it speed up and stretch her voice to keep up, which is what sounds robotic. Costs ~0.1 s of delay.
+function steady(pc) {
+  for (const r of pc ? pc.getReceivers() : [])
+    if (r.track && r.track.kind === 'audio' && 'jitterBufferTarget' in r) r.jitterBufferTarget = 120;
+}
+
 // Fill the screen only when her picture has about the screen's shape. Otherwise show it whole: cropping a portrait
 // phone picture to a wide PC window cuts most of it and blows the rest up, which looks blurry.
+let theyShare = false;
 function fit() {
   const v = $('remote');
   if (!v.videoWidth) return;
   const r = (v.videoWidth / v.videoHeight) / (innerWidth / innerHeight);
-  v.style.objectFit = r > 0.75 && r < 1.33 ? 'cover' : 'contain';
+  // While she shares her screen, always whole: cropping would cut the edges of her screen and her camera in the corner.
+  v.style.objectFit = !theyShare && r > 0.75 && r < 1.33 ? 'cover' : 'contain';
 }
 $('remote').addEventListener('resize', fit);
+// Your tile: drag it anywhere and it glides to the nearest corner when you let go (remembered for next time). A tap
+// without dragging swaps it with her picture. The glide animates transform only (FLIP), so it stays smooth.
+(() => {
+  const me = $('me');
+  try { me.dataset.corner = localStorage.getItem('rxCorner') || 'tr'; } catch { me.dataset.corner = 'tr'; }
+  let drag = null;
+  me.addEventListener('pointerdown', e => {
+    if ($('call').classList.contains('swap')) return;
+    drag = { x: e.clientX, y: e.clientY, moved: false };
+    me.setPointerCapture(e.pointerId);
+    me.style.animation = 'none'; // its pop-in would otherwise hold the transform
+    me.style.transition = 'none';
+  });
+  me.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.moved && Math.hypot(dx, dy) < 6) return; // still a tap
+    drag.moved = true;
+    me.style.transform = `translate(${dx}px, ${dy}px)`;
+  });
+  const drop = e => {
+    if (!drag) return;
+    const moved = drag.moved;
+    drag = null;
+    if (!moved) { me.style.transform = ''; if (e.type === 'pointerup') swap(true); return; }
+    const from = me.getBoundingClientRect(), cx = from.left + from.width / 2, cy = from.top + from.height / 2;
+    me.dataset.corner = (cy < innerHeight / 2 ? 't' : 'b') + (cx < innerWidth / 2 ? 'l' : 'r');
+    try { localStorage.setItem('rxCorner', me.dataset.corner); } catch {}
+    me.style.transform = '';
+    const to = me.getBoundingClientRect();
+    me.style.transform = `translate(${from.left - to.left}px, ${from.top - to.top}px)`; // back where you let go...
+    me.getBoundingClientRect();
+    me.style.transition = 'transform .45s cubic-bezier(.2, 1.3, .4, 1)'; // ...then glide in, with a little overshoot
+    me.style.transform = '';
+  };
+  me.addEventListener('pointerup', drop);
+  me.addEventListener('pointercancel', drop);
+  me.addEventListener('transitionend', () => { me.style.transition = ''; });
+})();
+$('remote').onclick = () => swap(false);
+// You big, her in the tile. In the Windows app her tile mustn't drag the window then, so it can be tapped back.
+function swap(on) {
+  $('call').classList.toggle('swap', on);
+  if (window.__TAURI__) $('remote').toggleAttribute('data-tauri-drag-region', !on);
+}
 addEventListener('resize', fit);
 
 function attach(c) {
   if (call && call !== c) call.close();
   call = c;
   // The same join / quit sounds as your own, when the other person arrives or leaves (stream can fire twice).
-  c.on('stream', s => { $('call').classList.contains('live') || sound.join(); playRemote(s); setStatus(''); openTell(); sharpen(c.peerConnection); });
+  c.on('stream', s => { $('call').classList.contains('live') || sound.join(); playRemote(s); setStatus(''); openTell(); sharpen(c.peerConnection); steady(c.peerConnection); });
   const gone = () => {
     if (call !== c) return;
     $('call').classList.contains('live') && sound.quit();
     call = null; $('remote').srcObject = null;
     $('call').classList.remove('themMuted', 'themCamOff');
+    swap(false);
+    theyShare = false;
     setStatus('Waiting for the other person…');
   };
   c.on('close', gone);
@@ -556,17 +738,17 @@ function decode(s) {
 }
 registerProcessor('pcm', class extends AudioWorkletProcessor {
   constructor() {
-    super(); this.q = []; this.at = 0; this.ready = false;
-    this.port.onmessage = e => e.data.onmessage = m => {
-      this.q.push(decode(m.data));
-      if (this.q.length > 10) this.q.splice(0, this.q.length - 3); // fell behind: drop old audio, keep delay low
-    };
+    super(); this.q = []; this.at = 0; this.ready = false; this.last = 0;
+    this.port.onmessage = e => e.data.onmessage = m => this.q.push(decode(m.data));
   }
+  // Chunks arrive in bursts (they pass through the app's UI thread). Hard cuts and big skips are what sound robotic,
+  // so: a 100 ms cushion, a fade instead of a cut when it runs dry, and catching up 20 ms at a time when behind.
   process(_, [[out]]) {
-    if (!this.ready) this.ready = this.q.length >= 3; // 60 ms cushion against bursty delivery
-    for (let i = 0; i < out.length && this.ready; i++) {
-      if (!this.q.length) { this.ready = false; break; } // ran dry: silence until the cushion refills
-      out[i] = this.q[0][this.at++] / 32768;
+    if (!this.ready) this.ready = this.q.length >= 5;
+    if (this.q.length > 15) { this.q.shift(); this.at = 0; } // over 300 ms behind: skip one chunk
+    for (let i = 0; i < out.length; i++) {
+      if (!this.ready || !this.q.length) { this.ready = false; out[i] = this.last *= 0.99; continue; } // fade out over ~2 ms
+      out[i] = this.last = this.q[0][this.at++] / 32768;
       if (this.at === this.q[0].length) { this.q.shift(); this.at = 0; }
     }
     return true;
@@ -761,13 +943,13 @@ function playRemote(s) {
   // Spinner until her first frame (the video itself fades in with .live).
   $('call').classList.add('frames');
   $('remote').addEventListener('playing', () => $('call').classList.remove('frames'), { once: true });
-  if (!window.RxAudio) { toSpeaker($('remote')).srcObject = s; return; }
+  if (!window.RxAudio) { toSpeaker($('remote')).srcObject = s; $('remote').muted = deaf; return; }
   $('remote').srcObject = new MediaStream(s.getVideoTracks());
   holder.srcObject = new MediaStream(s.getAudioTracks());
   ctx().resume();
   voice && voice.disconnect();
   voice = audioCtx.createMediaStreamSource(s);
-  voice.connect(voiceOut());
+  deaf || voice.connect(voiceOut());
 }
 function chip() {
   const s = Math.floor((Date.now() - since) / 1000);
@@ -800,6 +982,7 @@ const sound = {
   join: () => { tone(523, 0, 0.22, 0.16); tone(784, 0.11, 0.34, 0.16); },
   quit: () => { tone(784, 0, 0.22, 0.14); tone(523, 0.11, 0.32, 0.14); },
   click: () => tone(1200, 0, 0.05, 0.06),
+  message: () => { tone(880, 0, 0.12, 0.07); tone(1320, 0.07, 0.18, 0.07); },
 };
 
 // Shimmer on el until video shows its first frame.
@@ -836,7 +1019,10 @@ function withCam(screen) {
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
     g.drawImage(scr, 0, 0, w, h);
     if (face && camTrack.enabled) {
-      const fw = Math.round(w * 0.2), fh = Math.round(fw * face.displayHeight / face.displayWidth), m = Math.round(w * 0.015);
+      // 28% of the width (at most 40% of the height), so she can still see your face on a phone.
+      let fw = Math.round(w * 0.28), fh = Math.round(fw * face.displayHeight / face.displayWidth);
+      if (fh > h * 0.4) { fh = Math.round(h * 0.4); fw = Math.round(fh * face.displayWidth / face.displayHeight); }
+      const m = Math.round(w * 0.02);
       const x = w - fw - m, y = h - fh - m, r = Math.round(fw * 0.08);
       g.save(); g.beginPath(); g.roundRect(x, y, fw, fh, r); g.clip();
       g.drawImage(face, x, y, fw, fh);
@@ -874,14 +1060,103 @@ function sendVideo(track) {
   sendState();
 }
 
+function setMic(on) {
+  const t = local.getAudioTracks()[0];
+  if (!t) return;
+  t.enabled = on;
+  setBtn($('mic'), on ? 'mic' : 'mic-off', on ? 'Mute' : 'Unmute', on ? '' : 'off');
+  $('call').classList.toggle('muted', !on);
+  tellApp();
+}
 $('mic').onclick = () => {
   sound.click();
-  const t = local.getAudioTracks()[0];
-  t.enabled = !t.enabled;
-  setBtn($('mic'), t.enabled ? 'mic' : 'mic-off', t.enabled ? 'Mute' : 'Unmute', t.enabled ? '' : 'off');
-  $('call').classList.toggle('muted', !t.enabled);
-  tellApp();
+  if (deaf) return setDeaf(false, true); // like Discord: unmuting while deafened undeafens
+  setMic(!local.getAudioTracks()[0].enabled);
 };
+
+// Deafen, like Discord: you stop hearing her and your mic goes off; undeafen brings your mic back as it was.
+let deaf = false, micBefore = true;
+function setDeaf(on, micOn) {
+  const t = local.getAudioTracks()[0];
+  if (on) micBefore = !!t && t.enabled;
+  deaf = on;
+  $('remote').muted = on; // Windows plays her through the <video>
+  if (voice) { voice.disconnect(); on || voice.connect(voiceOut()); } // Android: through Web Audio
+  setBtn($('deaf'), on ? 'deaf-off' : 'deaf', on ? 'Undeafen' : 'Deafen', on ? 'off' : '');
+  setMic(on ? false : micOn || micBefore); // also sends the state (tellApp)
+}
+$('deaf').onclick = () => { sound.click(); setDeaf(!deaf); };
+
+// ---------- Chat: text, photos and videos over the same direct connection as the mute state (tell / peer
+// 'connection'), gone when the call ends. While it's closed, a message floats on screen and the button gets a dot.
+const MAX_FILE = 25 << 20;
+const chatOpen = () => !$('chat').hidden;
+function scrollChat() { $('msgs').scrollTop = $('msgs').scrollHeight; }
+$('chatBtn').onclick = () => {
+  sound.click();
+  $('chat').hidden = chatOpen();
+  if (chatOpen()) { $('chatBtn').classList.remove('unseen'); $('floats').replaceChildren(); scrollChat(); }
+};
+$('chatClose').onclick = () => { $('chat').hidden = true; };
+// m: {kind: 'text', text} or {kind: 'file', mime, data: ArrayBuffer}
+function bubble(m, cls) {
+  const el = document.createElement('div');
+  el.className = cls;
+  if (m.kind === 'text') { el.textContent = m.text; return el; }
+  el.classList.add('media');
+  const url = URL.createObjectURL(new Blob([m.data], { type: m.mime }));
+  const media = m.mime.startsWith('video/')
+    ? Object.assign(document.createElement('video'), { src: url, controls: cls.startsWith('msg'), playsInline: true, preload: 'metadata' })
+    : Object.assign(document.createElement('img'), { src: url, alt: 'Photo' });
+  media.addEventListener('load', scrollChat); media.addEventListener('loadedmetadata', scrollChat);
+  el.append(media);
+  return el;
+}
+function addMsg(m, mine) {
+  $('msgs').append(bubble(m, mine ? 'msg mine' : 'msg'));
+  scrollChat();
+  if (mine || chatOpen()) return;
+  $('chatBtn').classList.add('unseen');
+  sound.message();
+  const f = bubble(m, 'float');
+  f.onclick = () => { if (!chatOpen()) $('chatBtn').click(); };
+  $('floats').append(f);
+  while ($('floats').children.length > 3) $('floats').firstChild.remove();
+  setTimeout(() => { f.classList.add('out'); setTimeout(() => f.remove(), 400); }, 5000);
+}
+// What she sends is checked before it's shown: only text, photos and videos.
+function gotMsg(m) {
+  if (m.kind === 'text' && typeof m.text === 'string' && m.text) addMsg({ kind: 'text', text: m.text.slice(0, 2000) }, false);
+  else if (m.kind === 'file' && (m.data instanceof ArrayBuffer || ArrayBuffer.isView(m.data)) && // PeerJS hands it over as a Uint8Array
+           /^(image|video)\/[\w.+-]+$/.test(m.mime)) addMsg({ kind: 'file', mime: m.mime, data: m.data }, false);
+}
+function sendMsg(m) {
+  if (!tell || !tell.open) { toast('They’re not connected yet'); return false; }
+  tell.send(m);
+  addMsg(m, true);
+  return true;
+}
+$('chatForm').onsubmit = e => {
+  e.preventDefault();
+  const text = $('chatText').value.trim();
+  if (text && sendMsg({ kind: 'text', text })) $('chatText').value = '';
+};
+$('chatFile').onchange = async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file || !/^(image|video)\//.test(file.type)) return;
+  const blob = file.type.startsWith('image/') && file.type !== 'image/gif' ? await shrink(file).catch(() => file) : file;
+  if (blob.size > MAX_FILE) return toast('Too big to send (max 25 MB)');
+  sendMsg({ kind: 'file', mime: blob.type, data: await blob.arrayBuffer() });
+};
+// Photos at most 1600 px as JPEG: a 5 MB phone photo becomes a few hundred KB and arrives at once.
+async function shrink(file) {
+  const img = await createImageBitmap(file);
+  const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+  const c = Object.assign(document.createElement('canvas'), { width: Math.round(img.width * k), height: Math.round(img.height * k) });
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return new Promise((ok, no) => c.toBlob(b => b ? ok(b) : no(), 'image/jpeg', 0.85));
+}
 $('cam').onclick = () => {
   sound.click();
   camTrack.enabled = !camTrack.enabled;
