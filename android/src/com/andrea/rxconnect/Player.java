@@ -18,7 +18,7 @@ import android.webkit.WebMessagePort;
  * on a message port, the reverse of Mic.
  */
 final class Player {
-    static final int RATE = 48000, CUSHION = 5; // chunks buffered before playing starts: 100 ms against bursty delivery
+    static final int RATE = 48000, CUSHION = 4; // chunks buffered before playing starts: 80 ms against bursty delivery
 
     private final AudioTrack track;
     private final HandlerThread thread = new HandlerThread("speaker");

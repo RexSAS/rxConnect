@@ -164,7 +164,11 @@ public class MainActivity extends Activity {
     boolean has(String p) { return checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED; }
 
     // Back keeps the call going in the background; swiping the app away from recents ends it.
-    @Override public void onBackPressed() { if (!pip()) moveTaskToBack(true); }
+    // The page first: back closes an open photo or the chat (rxBack in index.html). Only then the call goes to the
+    // floating window, or the app to the background.
+    @Override public void onBackPressed() {
+        web.evaluateJavascript("window.rxBack ? rxBack() : false", handled -> { if (!"true".equals(handled) && !pip()) moveTaskToBack(true); });
+    }
 
     // --- Floating window: leaving the app during a call shrinks it to picture-in-picture, like WhatsApp ---
 
@@ -303,6 +307,9 @@ public class MainActivity extends Activity {
 
         /** Starts Player; its port reaches the page posted as a "speaker" message. */
         @JavascriptInterface public void startSpeaker() { runOnUiThread(MainActivity.this::startSpeaker); }
+
+        /** Back to automatic in a call (settings): her voice to the headphones again, through the WebView. */
+        @JavascriptInterface public void stopSpeaker() { runOnUiThread(MainActivity.this::stopSpeaker); }
 
         /** The speakers the settings offer, as JSON [{id, name}]; the id comes back through ownMic and route. */
         @JavascriptInterface public String outputs() {

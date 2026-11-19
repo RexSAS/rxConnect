@@ -11,6 +11,12 @@ tauri-build = "2"
 tauri = { version = "2", features = ["custom-protocol"] }
 serde_json = "1"
 ureq = { version = "2", features = ["json"] }
+# Shortcuts that work while another app is in front (set_shortcuts in main.rs).
+tauri-plugin-global-shortcut = "2"
+# Our own screen / window picker and the capture behind it (capture.rs): WebView2 can only show its own picker.
+xcap = "=0.9.8"
+image = { version = "0.25", default-features = false, features = ["jpeg"] } # the same image as xcap's, plus JPEG
+base64 = "0.22"
 
 [profile.release]
 strip = true
