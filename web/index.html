@@ -36,6 +36,14 @@
   .field:focus-within { border-color:var(--accent); box-shadow:0 0 0 4px #e0457b26; }
   .field svg { color:var(--muted); width:20px; height:20px; }
   .field input { flex:1; min-width:0; padding:14px 0; border:0; background:none; outline:none; }
+  /* Who's already in the room (checkRoom): the field shrinks and a profile circle with the count slides in. */
+  .roomRow { width:100%; display:flex; align-items:center; }
+  .roomRow .field { flex:1; min-width:0; }
+  #who { position:relative; flex:none; width:0; height:50px; margin-left:0; border-radius:50%; display:grid; place-items:center; background:var(--panel); border:1px solid transparent; color:var(--muted); opacity:0; transform:scale(.4); transition:width .35s var(--ease), margin .35s var(--ease), opacity .25s, transform .35s var(--ease), border-color .25s; }
+  #who.on { width:50px; margin-left:10px; opacity:1; transform:none; border-color:var(--line); }
+  #who svg { width:24px; height:24px; }
+  #who b { position:absolute; right:-4px; bottom:-4px; min-width:20px; height:20px; padding:0 5px; border-radius:10px; display:grid; place-items:center; background:var(--accent); color:#fff; font-size:12px; font-weight:700; box-shadow:0 0 0 3px var(--bg); }
+  #who.full b { background:var(--warn); color:#111; }
   .primary { width:100%; display:flex; align-items:center; justify-content:center; gap:8px; padding:14px; border:0; border-radius:14px; background:linear-gradient(140deg, var(--accent-2), var(--accent)); color:#fff; font-weight:600; transition:transform .15s var(--ease), box-shadow .2s, filter .2s; box-shadow:0 8px 24px #e0457b40; }
   .primary:hover { filter:brightness(1.08); }
   .primary:active { transform:scale(.97); }
@@ -234,6 +242,7 @@
   <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-deaf" viewBox="0 0 24 24"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></symbol>
   <symbol id="i-deaf-off" viewBox="0 0 24 24"><path d="M21 14h-1.34"/><path d="M9 21H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 15.86-5.8"/><path d="M3 14h3a2 2 0 0 1 2 2v3"/><path d="M21 12v7a2 2 0 0 1-.6 1.4"/><path d="m2 2 20 20"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
   <symbol id="i-chat" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
   <symbol id="i-clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
   <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>
@@ -268,10 +277,13 @@
     <div class="logo"><svg class="i"><use href="#i-heart"/></svg></div>
     <h1>rxConnect</h1>
     <p class="sub">Just the two of us.</p>
-    <label class="field">
-      <svg class="i"><use href="#i-key"/></svg>
-      <input id="room" placeholder="Room name" aria-label="Room name" autocomplete="off" autocapitalize="off" spellcheck="false">
-    </label>
+    <div class="roomRow">
+      <label class="field">
+        <svg class="i"><use href="#i-key"/></svg>
+        <input id="room" placeholder="Room name" aria-label="Room name" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </label>
+      <div id="who" role="status" aria-live="polite"><svg class="i"><use href="#i-user"/></svg><b id="whoN"></b></div>
+    </div>
     <button id="go" class="primary">Join call <svg class="i"><use href="#i-arrow"/></svg></button>
     <p class="hint">Use the same room name on both devices. Anyone who knows it can join, so pick something only you two know.</p>
   </div>
@@ -397,9 +409,44 @@ function setBtn(btn, icon, label, cls) {
 let saved = '';
 try { saved = localStorage.getItem('rxroom') || ''; } catch {}
 $('room').value = decodeURIComponent(location.hash.slice(1)) || saved;
+// Who's in the room typed here: each room is two slots on the broker (slotId), and a direct connection to a slot
+// only opens if someone holds it. Checked 0.6 s after typing stops, at start and every 10 s while on this screen.
+let probe, probeSeq = 0, probeTimer;
+function probePeer() {
+  if (!probe || probe.destroyed) { probe = new Peer(); probe.on('error', () => {}); } // peer-unavailable: see occupied()
+  return probe.open ? Promise.resolve(probe) : new Promise(r => probe.once('open', () => r(probe)));
+}
+function occupied(p, id) {
+  return new Promise(resolve => {
+    const c = p.connect(id, { metadata: 'probe' });
+    const err = e => { if (e.type === 'peer-unavailable' && String(e.message).includes(id)) done(false); };
+    const t = setTimeout(() => done(false), 5000);
+    function done(v) { clearTimeout(t); p.off('error', err); c.close(); resolve(v); }
+    p.on('error', err);
+    c.on('open', () => done(true));
+  });
+}
+function showWho(n) {
+  $('who').classList.toggle('on', n > 0);
+  $('who').classList.toggle('full', n >= 2);
+  $('whoN').textContent = n || '';
+  $('who').title = n >= 2 ? 'Room full: 2 people' : n ? '1 person waiting' : '';
+}
+async function checkRoom() {
+  const room = $('room').value.trim(), seq = ++probeSeq;
+  if (!room || $('join').style.display === 'none') return showWho(0);
+  const p = await probePeer();
+  const n = (await Promise.all([1, 2].map(i => occupied(p, slotId(room, i))))).filter(Boolean).length;
+  if (seq === probeSeq && $('room').value.trim() === room) showWho(n);
+}
+$('room').addEventListener('input', () => { showWho(0); clearTimeout(probeTimer); probeTimer = setTimeout(checkRoom, 600); });
+const whoTimer = setInterval(checkRoom, 10000);
+checkRoom();
+
 $('go').onclick = async () => {
   const room = $('room').value.trim();
   if (!room) return $('room').focus();
+  clearInterval(whoTimer); clearTimeout(probeTimer); probeSeq++; probe && probe.destroy();
   sound.join();
   try { localStorage.setItem('rxroom', room); } catch {}
   $('join').style.display = 'none';
@@ -556,7 +603,7 @@ function join(room, n) {
     if (call && (call.open || Date.now() - call.since < 5000)) return;
     dial();
   }, 5000);
-  peer.on('connection', d => d.on('data', st => {
+  peer.on('connection', d => d.metadata === 'probe' || d.on('data', st => { // probe: someone's checkRoom
     if (!st || typeof st !== 'object') return;
     if (st.kind) return gotMsg(st);
     $('call').classList.toggle('themMuted', !!(st.muted || st.deaf));
