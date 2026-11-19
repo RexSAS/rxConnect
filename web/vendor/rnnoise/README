@@ -1,0 +1,2 @@
+@sapphi-red/web-noise-suppressor 0.4.1 (MIT, see LICENSE): dist/rnnoise/workletProcessor.js as rnnoise.js,
+dist/noiseGate/workletProcessor.js as gate.js, dist/rnnoise_simd.wasm. Used by voiceFilter in ../../index.html.

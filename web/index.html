@@ -348,7 +348,7 @@ async function startMedia() {
   }
   if (app) { const t = await nativeMic(); t && local.addTrack(t); }
   const raw = local.getAudioTracks()[0];
-  if (raw) { local.removeTrack(raw); local.addTrack(leveler(raw)); }
+  if (raw) { local.removeTrack(raw); local.addTrack(await voiceFilter(raw)); }
   camTrack = local.getVideoTracks()[0];
   camTrack && tameLights(camTrack);
   if (!camTrack) { // no webcam: send a black frame so screen share still has a video track to swap into
@@ -377,7 +377,8 @@ function hifi(sdp) {
 console.assert(hifi('a=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=1\r\n') ===
   'a=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;stereo=1;sprop-stereo=1;maxaveragebitrate=128000;useinbandfec=1\r\n', 'hifi');
 const callOpts = { sdpTransform: hifi };
-const mic = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, sampleRate: 48000 };
+// noiseSuppression off: voiceFilter's RNNoise does it better (it turns the browser's back on if it can't load).
+const mic = { echoCancellation: true, noiseSuppression: false, autoGainControl: true, sampleRate: 48000 };
 
 function join(room, n) {
   me = slotId(room, n); other = slotId(room, 3 - n);
@@ -575,16 +576,39 @@ function tameLights(track) {
   }, 700);
 }
 
-// Your voice, evened out before it's sent: quiet speech brought up (compressor + gain), peaks kept clean (limiter).
-// Mics often send speech far too quiet, and the other side can only turn everything up, noise included.
-function leveler(track) {
-  const c = ctx(), comp = c.createDynamicsCompressor(), gain = c.createGain(), limiter = c.createDynamicsCompressor();
+// Discord-style filter on your voice before it's sent:
+// 1. RNNoise, AI noise removal like Discord's Krisp: hiss, fans, keyboard, traffic.
+// 2. A gate that silences the gaps between your words, which also cuts any leftover echo of her voice.
+// 3. A leveler: quiet speech brought up (compressor + gain), peaks kept clean (limiter). It comes after the noise
+//    removal, so it never turns hiss up.
+// RNNoise and the gate are vendored in web/vendor/rnnoise (see its README).
+const VENDOR = 'vendor/rnnoise/';
+async function voiceFilter(track) {
+  const c = ctx();
+  let node = c.createMediaStreamSource(new MediaStream([track]));
+  try {
+    // Worklets go through blob URLs: the Android app serves assets without a JavaScript MIME type, which addModule needs.
+    const load = async f => c.audioWorklet.addModule(URL.createObjectURL(new Blob([await (await fetch(VENDOR + f)).text()], { type: 'text/javascript' })));
+    // shortcut: SIMD build only (every Chromium since 91: WebView2, Android WebView); add rnnoise.wasm if an old one shows up.
+    const [wasmBinary] = await Promise.all([
+      fetch(VENDOR + 'rnnoise_simd.wasm').then(r => { if (!r.ok) throw Error('rnnoise ' + r.status); return r.arrayBuffer(); }),
+      load('rnnoise.js'), load('gate.js'),
+    ]);
+    const mono = { channelCount: 1, channelCountMode: 'explicit', outputChannelCount: [1] };
+    const rnnoise = new AudioWorkletNode(c, '@sapphi-red/web-noise-suppressor/rnnoise', { ...mono, processorOptions: { maxChannels: 1, wasmBinary } });
+    const gate = new AudioWorkletNode(c, '@sapphi-red/web-noise-suppressor/noise-gate', { ...mono, processorOptions: { openThreshold: -45, closeThreshold: -55, holdMs: 250, maxChannels: 1 } });
+    node = node.connect(rnnoise).connect(gate);
+  } catch (e) {
+    console.warn('voice filter unavailable, using the browser noise suppression', e);
+    track.applyConstraints({ ...mic, noiseSuppression: true }).catch(() => {});
+  }
+  const comp = c.createDynamicsCompressor(), gain = c.createGain(), limiter = c.createDynamicsCompressor();
   // Speech around -24 dBFS comes out near -14; louder speech is squeezed, the limiter stops anything clipping.
   comp.threshold.value = -24; comp.knee.value = 6; comp.ratio.value = 3; comp.attack.value = 0.005; comp.release.value = 0.25;
-  gain.gain.value = 3.2; // about +10 dB
+  gain.gain.value = 2; // about +6 dB
   limiter.threshold.value = -2; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.002; limiter.release.value = 0.1;
   const out = c.createMediaStreamDestination();
-  c.createMediaStreamSource(new MediaStream([track])).connect(comp).connect(gain).connect(limiter).connect(out);
+  node.connect(comp).connect(gain).connect(limiter).connect(out);
   c.resume();
   return out.stream.getAudioTracks()[0];
 }
