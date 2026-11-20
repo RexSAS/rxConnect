@@ -78,7 +78,9 @@ public class Widgets {
             v.setOnClickPendingIntent(R.id.heart, heart);
             v.setOnClickPendingIntent(R.id.name, heart);
             v.setOnClickPendingIntent(R.id.think, room.isEmpty() ? open(c, "") : act(c, "think"));
-            v.setOnClickPendingIntent(R.id.call, open(c, "call"));
+            // She's already there: no need to ask, just join her.
+            v.setTextViewText(R.id.call, here ? "📞 Wanna join?" : "📞 Wanna call?");
+            v.setOnClickPendingIntent(R.id.call, open(c, here ? "join" : "call"));
             m.updateAppWidget(id, v);
         }
         for (int id : m.getAppWidgetIds(new ComponentName(c, Heart.class))) {
@@ -133,9 +135,21 @@ public class Widgets {
         return PendingIntent.getActivity(c, ("open" + what).hashCode(), i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
+    // Mutable (to our own receiver only): the launcher then adds where the tap was (getSourceBounds), for Nudge.sent.
     static PendingIntent act(Context c, String kind) {
         return PendingIntent.getBroadcast(c, ("act" + kind).hashCode(), new Intent(c, Act.class).setAction(kind),
-                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+                PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    /** The widget hearts in pink for a moment: your nudge going out. update() puts them back. */
+    static void flash(Context c) {
+        AppWidgetManager m = AppWidgetManager.getInstance(c);
+        for (Class<?> k : new Class<?>[] {Big.class, Heart.class})
+            for (int id : m.getAppWidgetIds(new ComponentName(c, k))) {
+                RemoteViews v = new RemoteViews(c.getPackageName(), k == Big.class ? R.layout.widget_big : R.layout.widget_heart);
+                v.setImageViewResource(R.id.heart, R.drawable.heart_on);
+                m.partiallyUpdateAppWidget(id, v);
+            }
     }
 
     /** Taps that don't open the app: nudge, think (Thinking of you), later (dismiss a "wanna call?"). */
@@ -146,6 +160,11 @@ public class Widgets {
             if (!"nudge".equals(kind) && !"think".equals(kind)) return;
             final PendingResult r = goAsync();
             final Context app = c.getApplicationContext();
+            if (kind.equals("nudge")) { // you see it go: hearts burst from the one you tapped
+                flash(app);
+                Nudge.sent(app, i.getSourceBounds());
+                new Handler(Looper.getMainLooper()).postDelayed(() -> update(app), 1200);
+            }
             new Thread(() -> {
                 boolean ok = send(app, kind);
                 new Handler(Looper.getMainLooper()).post(() -> Toast.makeText(app,

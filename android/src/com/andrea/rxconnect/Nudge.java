@@ -153,6 +153,62 @@ final class Nudge {
         all.start();
     }
 
+    /**
+     * Your side of a nudge: a pink pulse and little hearts flying up from the heart you tapped on the widget (where
+     * the launcher says the tap was). Needs the same overlay permission; without it the widget's pink flash is all.
+     */
+    static void sent(Context c, android.graphics.Rect at) {
+        if (at == null || !Settings.canDrawOverlays(c)) return;
+        WindowManager wm = c.getSystemService(WindowManager.class);
+        float d = c.getResources().getDisplayMetrics().density;
+        int w = (int) (220 * d), h = (int) (260 * d), size = Math.min(at.width(), at.height());
+        FrameLayout root = new FrameLayout(c);
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(w, h, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                PixelFormat.TRANSLUCENT);
+        lp.gravity = Gravity.TOP | Gravity.START;
+        lp.x = at.centerX() - w / 2;
+        lp.y = at.centerY() - h + (int) (60 * d); // the tapped heart sits near the bottom of this window
+        int cy = h - (int) (60 * d); // its center, inside the window
+
+        ImageView pulse = new ImageView(c);
+        pulse.setImageResource(R.drawable.heart_on);
+        FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(size, size, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        pp.topMargin = cy - size / 2;
+        root.addView(pulse, pp);
+        ImageView[] minis = new ImageView[7];
+        int m = (int) (16 * d);
+        for (int i = 0; i < minis.length; i++) {
+            minis[i] = new ImageView(c);
+            minis[i].setImageResource(R.drawable.heart_mini);
+            minis[i].setAlpha(0f);
+            FrameLayout.LayoutParams mp = new FrameLayout.LayoutParams(m, m, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+            mp.topMargin = cy - m / 2;
+            root.addView(minis[i], mp);
+        }
+        try { wm.addView(root, lp); } catch (RuntimeException e) { return; }
+
+        AnimatorSet all = new AnimatorSet();
+        AnimatorSet.Builder b = all.play(together(anim(pulse, 500, new DecelerateInterpolator(), "scaleX", .7f, 1.6f),
+                anim(pulse, 500, new DecelerateInterpolator(), "scaleY", .7f, 1.6f), anim(pulse, 500, null, "alpha", 1, 0)));
+        for (int i = 0; i < minis.length; i++) { // a fan of hearts rising up, a little apart in time
+            float dx = (i - (minis.length - 1) / 2f) * 22 * d, rise = (140 + (i % 3) * 30) * d;
+            Animator one = together(anim(minis[i], 900, new DecelerateInterpolator(), "translationX", 0, dx),
+                    anim(minis[i], 900, new DecelerateInterpolator(), "translationY", 0, -rise),
+                    anim(minis[i], 900, null, "alpha", 0, 1, 1, 0),
+                    anim(minis[i], 900, null, "scaleX", .5f, 1.1f), anim(minis[i], 900, null, "scaleY", .5f, 1.1f));
+            one.setStartDelay(i * 40L);
+            b.with(one);
+        }
+        all.addListener(new AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(Animator a) {
+                try { wm.removeView(root); } catch (RuntimeException ignored) {}
+            }
+        });
+        all.start();
+    }
+
     static Animator anim(View v, long ms, android.animation.TimeInterpolator in, String prop, float... values) {
         ObjectAnimator a = ObjectAnimator.ofPropertyValuesHolder(v, PropertyValuesHolder.ofFloat(prop, values));
         a.setDuration(ms);
