@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.andrea.rxconnect"
-    android:versionCode="1"
-    android:versionName="1.0">
+<!-- Package and version: build.gradle. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
@@ -18,6 +16,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Updates from GitHub releases (see Updater). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- A nudge's heart over whatever app is open (Nudge); asked by the setup check. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
@@ -34,9 +34,40 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Invite links: rxconnect://join#room (opened from pages/index.html). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="rxconnect" />
+            </intent-filter>
         </activity>
         <service android:name=".CallService" android:exported="false"
             android:foregroundServiceType="camera|microphone" />
+        <!-- "Someone's in your room" from Firebase (see PushService and ../push). -->
+        <service android:name=".PushService" android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <!-- Home-screen widgets (Widgets.java); Act: their taps that don't open the app. -->
+        <receiver android:name=".Widgets$Big" android:exported="true" android:label="rxConnect">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_big" />
+        </receiver>
+        <receiver android:name=".Widgets$Heart" android:exported="true" android:label="Heart">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_heart" />
+        </receiver>
+        <receiver android:name=".Widgets$Board" android:exported="true" android:label="Our board">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_board" />
+        </receiver>
+        <receiver android:name=".Widgets$Photo" android:exported="true" android:label="Photo">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_photo" />
+        </receiver>
+        <receiver android:name=".Widgets$Act" android:exported="false" />
         <receiver android:name=".Updater$Status" android:exported="false" />
         <receiver android:name=".Updater$Replaced" android:exported="false">
             <intent-filter>

@@ -77,6 +77,9 @@
   @keyframes flow { to { transform:translateX(10px); } }
   #status { margin:0; color:var(--text); font-size:19px; font-weight:600; }
   #waiting .hint { margin:-18px 0 0; color:var(--muted); font-size:14px; }
+  #invite { display:flex; align-items:center; gap:8px; }
+  #invite svg { width:18px; height:18px; }
+  .pip #invite { display:none; }
 
   #chip { position:absolute; left:16px; top:calc(16px + env(safe-area-inset-top)); display:flex; align-items:center; gap:8px; padding:8px 14px; border-radius:999px; background:#16181fcc; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); font-size:14px; font-variant-numeric:tabular-nums; animation:drop .5s var(--ease) .1s both; }
   @keyframes drop { from { opacity:0; transform:translateY(-12px); } }
@@ -154,11 +157,11 @@
   .idle { cursor:none; }
 
   /* ---------- Update dialog ---------- */
-  #upd, #set, #perm, #pick { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; background:#000b; z-index:10; animation:fade .25s ease both; }
-  #upd .box, #set .box, #perm .box, #pick .box { width:min(360px,100%); background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:22px; animation:pop .35s var(--ease) both; }
-  #upd .head, #set .head, #perm .head, #pick .head { display:flex; align-items:center; gap:12px; }
-  #upd .head .ic, #set .head .ic, #perm .head .ic, #pick .head .ic { width:40px; height:40px; border-radius:12px; display:grid; place-items:center; background:#e0457b22; color:var(--accent-2); }
-  #upd b, #set b, #perm b, #pick .head b { font-size:18px; }
+  #upd, #set, #perm, #pick, #name { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; background:#000b; z-index:10; animation:fade .25s ease both; }
+  #upd .box, #set .box, #perm .box, #pick .box, #name .box { width:min(360px,100%); background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:22px; animation:pop .35s var(--ease) both; }
+  #upd .head, #set .head, #perm .head, #pick .head, #name .head { display:flex; align-items:center; gap:12px; }
+  #upd .head .ic, #set .head .ic, #perm .head .ic, #pick .head .ic, #name .head .ic { width:40px; height:40px; border-radius:12px; display:grid; place-items:center; background:#e0457b22; color:var(--accent-2); }
+  #upd b, #set b, #perm b, #pick .head b, #name b { font-size:18px; }
   /* Our own screen / window picker (Windows app, nativeShare) */
   #pick .box { width:min(760px,100%); max-height:calc(100vh - 32px); display:flex; flex-direction:column; }
   #pick .head b { flex:1; }
@@ -172,7 +175,23 @@
   .src span { font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .src small { display:block; color:var(--muted); font-size:11px; }
   .pickWait { padding:40px 0; text-align:center; color:var(--muted); }
-  #updText, #permText { color:var(--muted); margin:14px 0 18px; }
+  /* Photo / board for the widgets (openSnap) */
+  #snap { position:fixed; inset:0; z-index:12; display:flex; flex-direction:column; align-items:center; gap:14px; padding:16px; background:#000; animation:fade .25s ease both; }
+  #snap .sbar { width:min(520px,100%); display:flex; align-items:center; gap:8px; }
+  #snap .sbar b { flex:1; font-size:18px; }
+  #snap .sview { position:relative; width:min(520px, 100%, calc(100vh - 220px)); aspect-ratio:1; border-radius:24px; overflow:hidden; background:#111; }
+  #snap video, #snap canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  #snap canvas { touch-action:none; }
+  #snap.board canvas { cursor:crosshair; }
+  #snapTools { display:flex; gap:10px; }
+  #snapTools .sw { width:32px; height:32px; border-radius:50%; border:3px solid transparent; padding:0; }
+  #snapTools .sw.sel { border-color:#fff; }
+  #snap .srow { display:flex; align-items:center; justify-content:center; gap:20px; min-height:76px; }
+  #snapShoot { width:72px; height:72px; border-radius:50%; border:5px solid #fff; background:var(--accent); transition:transform .15s var(--ease); }
+  #snapShoot:active { transform:scale(.9); }
+  #name { backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); } /* the start screen behind, still: no stutter */
+  #name .box { display:flow-root; } /* holds the floated button */
+  #updText, #permText, #name p { color:var(--muted); margin:14px 0 18px; }
   #updBar { height:8px; border-radius:4px; background:var(--panel-2); overflow:hidden; }
   #updBar i { display:block; height:100%; width:0; border-radius:4px; background:linear-gradient(90deg, var(--accent), var(--accent-2)); transition:width .3s ease; }
   #updBtns, #permBtns { display:flex; gap:10px; justify-content:flex-end; }
@@ -187,6 +206,8 @@
   .sc button:hover { border-color:#ffffff40; }
   .sc button.empty { color:var(--muted); font-weight:400; }
   .sc button.listening { border-color:var(--accent); color:var(--accent-2); box-shadow:0 0 0 4px #e0457b26; animation:blink 1.2s ease-in-out infinite; }
+  #set input, #name input { width:100%; padding:12px; border-radius:12px; border:1px solid var(--line); background:var(--panel-2); color:var(--text); font:inherit; }
+  #name .btn { margin-top:16px; float:right; }
   #set select { padding:12px; border-radius:12px; border:1px solid var(--line); background:var(--panel-2); color:var(--text); font:inherit; }
   #set .btn { margin-top:20px; float:right; }
   #ver { float:left; margin:30px 0 0; color:var(--muted); font-size:13px; }
@@ -369,6 +390,7 @@
     </div>
     <p id="status">Waiting for the other person…</p>
     <p class="hint">The call starts as soon as they join.</p>
+    <button id="invite" class="btn go"><svg class="i"><use href="#i-send"/></svg>Invite</button>
   </div>
   <div id="toast" role="status" hidden></div>
   <div id="chip" role="status"><i class="dot"></i><span id="chipText">Waiting</span></div>
@@ -406,6 +428,7 @@
 <div id="set" hidden role="dialog" aria-modal="true" aria-labelledby="setTitle">
   <div class="box">
     <div class="head"><div class="ic"><svg class="i"><use href="#i-gear"/></svg></div><b id="setTitle">Settings</b></div>
+    <label>Your name<input id="setName" maxlength="40" autocomplete="off"></label>
     <label>Microphone<select id="micSel"></select></label>
     <label id="spkRow">Speaker<select id="spkSel"></select></label>
     <div id="keys" hidden>
@@ -422,6 +445,22 @@
     <div class="head"><div class="ic"><svg class="i"><use href="#i-screen"/></svg></div><b id="pickTitle">Share your screen</b>
       <button id="pickClose" class="icon" aria-label="Cancel" title="Cancel"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div id="pickList"></div>
+  </div>
+</div>
+
+<div id="snap" hidden role="dialog" aria-modal="true" aria-labelledby="snapTitle">
+  <div class="sbar"><b id="snapTitle"></b><button id="snapX" class="btn">Cancel</button></div>
+  <div class="sview"><video id="snapVid" class="mirror" autoplay playsinline muted></video><canvas id="snapCv" width="720" height="720"></canvas></div>
+  <div id="snapTools"></div>
+  <div class="srow"><button id="snapRetake" class="btn" hidden>Retake</button><button id="snapClear" class="btn" hidden>Clear</button><button id="snapShoot" aria-label="Take photo"></button><button id="snapSend" class="btn go" hidden>Send 💗</button></div>
+</div>
+
+<div id="name" hidden role="dialog" aria-modal="true" aria-labelledby="nameTitle">
+  <div class="box">
+    <div class="head"><div class="ic"><svg class="i"><use href="#i-user"/></svg></div><b id="nameTitle">What's your name?</b></div>
+    <p>So the other person knows it's you. You can change it in the settings.</p>
+    <input id="nameIn" maxlength="40" autocomplete="off" aria-label="Your name">
+    <button id="nameGo" class="btn go">Continue</button>
   </div>
 </div>
 
@@ -461,6 +500,7 @@ if (window.__TAURI__) {
   for (const id of ['join', 'call', 'waiting', 'remote']) $(id).setAttribute('data-tauri-drag-region', '');
 }
 let peer, call, local, camTrack, screenTrack, me, other, since, tick, idle;
+if (!navigator.mediaDevices?.getDisplayMedia) $('screen').hidden = true; // Android can't share its screen: hidden from the start
 
 // Room "abc" has exactly two slots: rxconnect-abc-1 and rxconnect-abc-2. Whoever comes first waits alone.
 const slotId = (room, n) => 'rxconnect-' + room.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + n;
@@ -499,7 +539,9 @@ function setBtn(btn, icon, label, cls) {
 
 let saved = '';
 try { saved = localStorage.getItem('rxroom') || ''; } catch {}
-$('room').value = decodeURIComponent(location.hash.slice(1)) || saved;
+let linked = ''; // the room from an invite link (#room); a malformed one must not stop the page
+try { linked = decodeURIComponent(location.hash.slice(1)); } catch {}
+$('room').value = linked || saved;
 // Who's in the room typed here: each room is two slots on the broker (slotId), and a direct connection to a slot
 // only opens if someone holds it. Checked 0.6 s after typing stops, at start and every 10 s while on this screen.
 let probe, probeSeq = 0, probeTimer;
@@ -533,6 +575,162 @@ async function checkRoom() {
 $('room').addEventListener('input', () => { showWho(0); clearTimeout(probeTimer); probeTimer = setTimeout(checkRoom, 600); });
 const whoTimer = setInterval(checkRoom, 10000);
 checkRoom();
+// A rxconnect:// invite link opened while the app runs (Android onNewIntent, Windows second launch): its room,
+// URL-encoded. Only fills it in; in a call it's ignored.
+window.rxOpenRoom = hash => {
+  if ($('join').style.display === 'none') return;
+  try { $('room').value = decodeURIComponent(hash); } catch { return; }
+  showWho(0); checkRoom();
+};
+
+// Push (../push/worker.js): what reaches the other phone of your room through the push server. The room only leaves as
+// a hash (roomHash); photos and the board go encrypted with a key from the room name (seal), so the server can't read
+// them. An Android phone signs up for your room with its Firebase token: at start (here=false) and when you join.
+const PUSH = 'https://rxsas.it/rxconnect-push/';
+function myName() { try { return localStorage.getItem('rxName') || ''; } catch { return ''; } }
+const pushToken = () => window.RxNative && RxNative.pushToken ? RxNative.pushToken() : '';
+async function roomHash(room) {
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(slotId(room, 0)))),
+    b => b.toString(16).padStart(2, '0')).join('');
+}
+const push = (path, body) => fetch(PUSH + path, { method: 'POST', body: JSON.stringify({ token: pushToken(), name: myName(), ...body }) });
+let joinedHash = null; // the room you're in, for "gone" when you leave
+async function announce(room, here) {
+  const token = pushToken();
+  if (!room || (!here && !token)) return;
+  try {
+    const hash = await roomHash(room);
+    if (token && RxNative.pushRoom) RxNative.pushRoom(room, hash, myName()); // the widgets and notifications use these
+    if (here) joinedHash = hash;
+    await push('room', { room: hash, here });
+  } catch {} // offline or server down: the call works without it
+}
+// Left the room (hang up, or the page closing): the other phone's widget stops showing you there.
+function sayGone() {
+  if (!joinedHash) return;
+  navigator.sendBeacon(PUSH + 'send', JSON.stringify({ room: joinedHash, token: pushToken(), kind: 'gone', name: myName() }));
+  joinedHash = null;
+}
+window.rxPushReady = () => announce(saved, false); // Android: Firebase gave the token after the page loaded
+rxPushReady();
+
+// From a widget or notification (MainActivity.opened): join, call (Wanna call?: tell them, then join), photo, board.
+window.rxOpen = async what => {
+  if (what === 'photo' || what === 'board') return openSnap(what);
+  if ($('call').style.display === 'block') return;
+  const room = $('room').value.trim();
+  if (!room) return $('room').focus();
+  if (what === 'call') push('send', { room: await roomHash(room), kind: 'call' }).catch(() => {});
+  $('go').click();
+};
+{ const what = new URLSearchParams(location.search).get('open'); if (what) setTimeout(() => rxOpen(what), 2700); } // after the splash
+
+// Photo and board (widgets): a square photo from the front camera, or your shared drawing, sent to the other phone.
+// Sealed with AES-GCM, key SHA-256("rxconnect-key:" + room), IV first: Widgets.unseal opens it on the phone.
+async function seal(room, bytes) {
+  const raw = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('rxconnect-key:' + room));
+  const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt']);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes));
+  const box = new Uint8Array(12 + ct.length);
+  box.set(iv); box.set(ct, 12);
+  return toB64(box);
+}
+function toB64(bytes) { let s = ''; for (let i = 0; i < bytes.length; i += 8192) s += String.fromCharCode(...bytes.subarray(i, i + 8192)); return btoa(s); }
+let snap = null; // {which, stream, strokes, bg}
+async function openSnap(which) {
+  const room = $('room').value.trim();
+  if (!room) return toast('Join your room once first');
+  closeSnap();
+  snap = { which, room, stream: null, strokes: [], bg: null, color: '#e0457b' };
+  const cv = $('snapCv'), g = cv.getContext('2d');
+  $('snapTitle').textContent = which === 'photo' ? 'A photo for them 💗' : 'Our board ✏️';
+  $('snap').classList.toggle('board', which === 'board');
+  $('snapShoot').hidden = which !== 'photo';
+  $('snapRetake').hidden = true;
+  $('snapSend').hidden = $('snapClear').hidden = $('snapTools').hidden = which === 'photo';
+  cv.hidden = which === 'photo'; $('snapVid').hidden = which !== 'photo';
+  openDialog($('snap'));
+  if (which === 'photo') {
+    try { snap.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 1280, height: 1280 } }); }
+    catch { toast('No camera'); return closeSnap(); }
+    $('snapVid').srcObject = snap.stream;
+  } else {
+    const url = window.RxNative && RxNative.image ? RxNative.image('board') : '';
+    if (url) { const img = new Image(); img.onload = () => { if (snap) { snap.bg = img; drawBoard(); } }; img.src = url; }
+    drawBoard();
+  }
+}
+function closeSnap() {
+  if (!snap) return;
+  snap.stream && snap.stream.getTracks().forEach(t => t.stop());
+  $('snapVid').srcObject = null;
+  snap = null;
+  $('snap').hidden = true; // not closeDialog: this one has no .box to shrink
+}
+function drawBoard() {
+  const cv = $('snapCv'), g = cv.getContext('2d');
+  g.fillStyle = '#f7f2ea'; g.fillRect(0, 0, cv.width, cv.height);
+  if (snap.bg) g.drawImage(snap.bg, 0, 0, cv.width, cv.height);
+  g.lineCap = g.lineJoin = 'round';
+  for (const s of snap.strokes) {
+    g.strokeStyle = s.c; g.lineWidth = 10;
+    g.beginPath();
+    s.pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y));
+    if (s.pts.length === 1) g.lineTo(s.pts[0][0] + .1, s.pts[0][1]);
+    g.stroke();
+  }
+}
+{
+  const cv = $('snapCv');
+  const at = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height]; };
+  let cur = null;
+  cv.onpointerdown = e => { if (!snap || snap.which !== 'board') return; cv.setPointerCapture(e.pointerId); cur = { c: snap.color, pts: [at(e)] }; snap.strokes.push(cur); drawBoard(); };
+  cv.onpointermove = e => { if (!cur) return; cur.pts.push(at(e)); drawBoard(); };
+  cv.onpointerup = cv.onpointercancel = () => { cur = null; };
+  for (const c of ['#e0457b', '#2b2d42', '#3a86ff', '#2a9d8f', '#f4a261']) {
+    const b = Object.assign(document.createElement('button'), { className: 'sw' });
+    b.style.background = c; b.setAttribute('aria-label', 'Color'); b.dataset.c = c;
+    b.onclick = () => { snap.color = c; $('snapTools').querySelectorAll('.sw').forEach(x => x.classList.toggle('sel', x === b)); };
+    $('snapTools').appendChild(b);
+  }
+  $('snapTools').firstChild.classList.add('sel');
+}
+$('snapX').onclick = closeSnap;
+$('snapClear').onclick = () => { snap.strokes = []; snap.bg = null; drawBoard(); };
+$('snapShoot').onclick = () => {
+  const v = $('snapVid'), cv = $('snapCv'), g = cv.getContext('2d'), s = Math.min(v.videoWidth, v.videoHeight);
+  if (!s) return;
+  g.save(); g.translate(cv.width, 0); g.scale(-1, 1); // mirrored, like the preview
+  g.drawImage(v, (v.videoWidth - s) / 2, (v.videoHeight - s) / 2, s, s, 0, 0, cv.width, cv.height);
+  g.restore();
+  cv.hidden = false; v.hidden = true;
+  $('snapShoot').hidden = true; $('snapRetake').hidden = $('snapSend').hidden = false;
+};
+$('snapRetake').onclick = () => { $('snapCv').hidden = true; $('snapVid').hidden = false; $('snapShoot').hidden = false; $('snapRetake').hidden = $('snapSend').hidden = true; };
+$('snapSend').onclick = async () => {
+  const { which, room } = snap;
+  const jpeg = $('snapCv').toDataURL('image/jpeg', .85).split(',')[1];
+  $('snapSend').disabled = true;
+  try {
+    const bytes = Uint8Array.from(atob(jpeg), c => c.charCodeAt(0));
+    const r = await push('image', { room: await roomHash(room), which, data: await seal(room, bytes) });
+    if (!r.ok) throw new Error(r.status);
+    window.RxNative && RxNative.saveImage && RxNative.saveImage(which, jpeg);
+    closeSnap();
+    toast(which === 'photo' ? 'Photo sent 💗' : 'Drawing sent 💗');
+  } catch { toast("Couldn't send: check your connection"); }
+  $('snapSend').disabled = false;
+};
+
+// Invite: a no-pressure "I'm in the room" for your usual chat, with a link that opens this room (pages/index.html).
+const INVITES = ["I'm in the room, hop in whenever 🙂", "I'm around if you feel like talking 💗", "Hanging out on rxConnect, come say hi if you're free 👋"];
+$('invite').onclick = async () => {
+  const text = INVITES[Math.floor(Math.random() * INVITES.length)] + '\nhttps://rxsas.it/rxConnect/#' + encodeURIComponent($('room').value.trim());
+  if (window.RxNative && RxNative.share) return RxNative.share(text); // Android: WebView has no navigator.share
+  if (navigator.share) try { return await navigator.share({ text }); } catch (e) { if (e.name === 'AbortError') return; }
+  try { await navigator.clipboard.writeText(text); toast('Invite copied: paste it in your chat'); } catch { toast(text); }
+};
 
 $('go').onclick = async () => {
   const room = $('room').value.trim();
@@ -547,6 +745,7 @@ $('go').onclick = async () => {
   watchBattery();
   if (window.RxAudio) { RxAudio.inCall(room); tellApp(); } // Android: the "Calling on <room>" notification
   join(room, 1);
+  announce(room, true);
 };
 // Mute / camera state to the other person, so they see it. Each side opens its own one-way channel when the call
 // connects (no "who opens it" race when both dial at once) and sends on every change.
@@ -691,7 +890,6 @@ async function startMedia() {
   if (!local.getAudioTracks().length) { setBtn($('mic'), 'mic-off', 'No microphone', 'off'); $('mic').disabled = true; $('call').classList.add('muted'); }
   // Video only: on Android a <video> whose stream has audio takes full audio focus (pausing music) even when muted.
   showSelf(camTrack);
-  if (!navigator.mediaDevices.getDisplayMedia) $('screen').hidden = true; // Android can't share its screen
 }
 
 // WebRTC's default Opus audio is ~32 kbps mono "phone call" quality. Each side's SDP tells the other what it may
@@ -981,6 +1179,7 @@ $('viewMedia').addEventListener('pointercancel', endGesture);
 // Back (Android's back button, the mouse's back button, the Back key or Alt+Left on Windows): closes an open photo,
 // then the chat, before anything else. Android asks this first (MainActivity.onBackPressed).
 window.rxBack = () => {
+  if (snap) { closeSnap(); return true; }
   if (viewing) { closeViewer(); return true; }
   if (chatOpen()) { setChat(false); return true; }
   return false;
@@ -1626,9 +1825,10 @@ $('leave').onclick = () => {
   duck(false); c && c.close(); peer && peer.destroy(); local.getTracks().forEach(t => t.stop());
   globalKeys(false); // other apps get those keys back now (the reload clears them too)
   $('call').animate([{ opacity: 1 }, { opacity: 0 }], { duration: 420, easing: 'ease-in', fill: 'forwards' });
+  sayGone();
   setTimeout(() => location.reload(), 450); // let the quit sound finish
 };
-addEventListener('pagehide', () => { call && call.close(); peer && peer.destroy(); });
+addEventListener('pagehide', () => { sayGone(); call && call.close(); peer && peer.destroy(); });
 
 // Updates: only inside the apps. The native side (android/ Updater, windows/ update.rs) checks GitHub and calls rxUpdate.*.
 // Audio settings (gear on the home screen): choices are remembered and used on the next call.
@@ -1720,6 +1920,7 @@ async function openSettings() {
     // mode, so it's only offered before a call.
     if (micPath === 'native') for (const o of [...$('spkSel').options]) if (o.value === 'earpiece') o.remove();
   }
+  $('setName').value = myName();
   openDialog($('set'));
 }
 const keep = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
@@ -1730,6 +1931,7 @@ $('spkSel').onchange = e => {
   if (micPath === 'callmode') RxAudio.route(e.target.value);
   if (micPath === 'native') setPhoneSpeaker(e.target.value === 'speaker');
 };
+$('setName').onchange = e => { const n = e.target.value.trim(); if (n) { keep('rxName', n.slice(0, 40)); announce(saved, false); } else e.target.value = myName(); };
 $('setDone').onclick = () => { listening = null; closeDialog($('set')); };
 
 const native = window.RxNative ? { check: () => RxNative.check(), install: () => RxNative.install(), version: async () => RxNative.version() }
@@ -1762,8 +1964,10 @@ const NEEDS = {
   camera: 'Allow the camera, so the other person can see you.',
   mic: 'Allow the microphone, so the other person can hear you.',
   notifications: 'Allow notifications, so the call keeps running in the background, with its controls in the notification.',
+  overlay: 'Allow rxConnect to appear over other apps, so a little heart can pop up on your screen when you get a nudge. If Android says it\'s restricted: in Settings › Apps › rxConnect, tap ⋮ › Allow restricted settings, then try again.',
 };
 window.rxCheck = () => {
+  if (!myName()) return; // the name comes first (askName)
   if (!window.RxNative || !RxNative.missing || $('call').style.display === 'block') return;
   let later = false;
   try { later = sessionStorage.getItem('rxPermLater') === '1'; } catch {}
@@ -1776,6 +1980,24 @@ window.rxCheck = () => {
 };
 $('permLater').onclick = () => { try { sessionStorage.setItem('rxPermLater', '1'); } catch {} closeDialog($('perm')); };
 rxCheck();
+
+// Profile: your name, asked the first time the app opens (changed in the settings). It goes with "you're in the room"
+// to the push server, so the other phone says "<name> is online in <room> room".
+function askName() {
+  if (myName()) return;
+  openDialog($('name'));
+  $('nameIn').focus();
+}
+$('nameGo').onclick = () => {
+  const n = $('nameIn').value.trim();
+  if (!n) return $('nameIn').focus();
+  keep('rxName', n.slice(0, 40));
+  announce(saved, false);
+  closeDialog($('name'));
+  rxCheck(); // the Android setup check waited for this
+};
+$('nameIn').onkeydown = e => { if (e.key === 'Enter') $('nameGo').click(); };
+askName();
 </script>
 </body>
 </html>

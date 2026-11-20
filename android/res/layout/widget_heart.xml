@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 2x2: just the heart. Pink when they're in the room (tap: join), grey otherwise (tap: nudge). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:gravity="center" android:padding="12dp" android:background="@drawable/widget_bg">
+    <ImageView android:id="@+id/heart" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:src="@drawable/heart_off" android:scaleType="fitCenter" android:contentDescription="Heart" />
+    <TextView android:id="@+id/state" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp"
+        android:gravity="center" android:text="Tap to nudge" android:textColor="#8B91A1" android:textSize="12sp" android:singleLine="true" />
+</LinearLayout>

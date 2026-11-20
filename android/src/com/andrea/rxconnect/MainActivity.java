@@ -6,6 +6,8 @@ import android.app.AppOpsManager;
 import android.app.PictureInPictureParams;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
+import android.content.Context;
 import android.content.res.Configuration;
 import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
@@ -101,6 +103,13 @@ public class MainActivity extends Activity {
         web.addJavascriptInterface(new Bridge(), "RxNative");
         web.addJavascriptInterface(new AudioBridge(), "RxAudio");
         onScreen = this;
+        // This phone's Firebase address, for "someone's in your room" (PushService): the page passes it to the push
+        // server with your room (announce in index.html).
+        com.google.firebase.messaging.FirebaseMessaging.getInstance().getToken().addOnSuccessListener(t -> {
+            pushToken = t;
+            Widgets.prefs(this).edit().putString("token", t).apply(); // the widgets send with it too
+            js("window.rxPushReady && rxPushReady()");
+        });
 
         List<String> ask = new ArrayList<>();
         ask.add(Manifest.permission.CAMERA);
@@ -121,7 +130,36 @@ public class MainActivity extends Activity {
     @Override public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
         if (code != 1) { js("window.rxCheck && rxCheck()"); return; } // asked again from the setup check
         // Load only now, so the page's getUserMedia sees the final answer.
-        web.loadUrl("https://" + HOST + "/index.html");
+        String what = opened(getIntent());
+        web.loadUrl("https://" + HOST + "/index.html" + (what == null ? "" : "?open=" + what) + linkHash(getIntent()));
+    }
+
+    /** What a widget or notification asked to open (Widgets.open): join, call, photo, board; null otherwise. */
+    String opened(Intent i) {
+        String what = i == null ? null : i.getStringExtra("what");
+        if (!"join".equals(what) && !"call".equals(what) && !"photo".equals(what) && !"board".equals(what)) return null;
+        if (what.equals("photo") || what.equals("board")) { // seen: the widget's "new" dot goes
+            Widgets.prefs(this).edit().putBoolean(what + "New", false).apply();
+            Widgets.update(this);
+        }
+        getSystemService(android.app.NotificationManager.class).cancel(PushService.CALL);
+        return what;
+    }
+
+    /** "#room" (URL-encoded) from an invite link rxconnect://join#room, or "" for a normal start. */
+    static String linkHash(Intent i) {
+        Uri u = i == null ? null : i.getData();
+        String f = u == null ? null : u.getEncodedFragment();
+        return f == null || f.isEmpty() ? "" : "#" + f;
+    }
+
+    // An invite link while the app is open (singleTask): the page fills in the room, unless you're in a call.
+    @Override protected void onNewIntent(Intent i) {
+        super.onNewIntent(i);
+        String h = linkHash(i);
+        if (!h.isEmpty()) js("window.rxOpenRoom && rxOpenRoom(" + JSONObject.quote(h.substring(1)) + ")");
+        String what = opened(i);
+        if (what != null) js("window.rxOpen && rxOpen('" + what + "')");
     }
 
     // Back from the settings the setup check opened: check again (the page closes its dialog once all is set).
@@ -145,6 +183,7 @@ public class MainActivity extends Activity {
         if (!has(Manifest.permission.CAMERA)) m.put("camera");
         if (!has(Manifest.permission.RECORD_AUDIO)) m.put("mic");
         if (Build.VERSION.SDK_INT >= 33 && !has(Manifest.permission.POST_NOTIFICATIONS)) m.put("notifications");
+        if (!Settings.canDrawOverlays(this)) m.put("overlay"); // the nudge's heart over other apps (Nudge)
         return m.toString();
     }
 
@@ -154,6 +193,7 @@ public class MainActivity extends Activity {
         // Android still asks for it itself, unless it was refused for good: then only the app's settings can.
         if (perm != null && shouldShowRequestPermissionRationale(perm)) { requestPermissions(new String[] {perm}, 3); return; }
         Uri app = Uri.parse("package:" + getPackageName());
+        if (what.equals("overlay")) { startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, app)); return; }
         try {
             startActivity(new Intent(what.equals("pip") ? "android.settings.PICTURE_IN_PICTURE_SETTINGS" : Settings.ACTION_APPLICATION_DETAILS_SETTINGS, app));
         } catch (android.content.ActivityNotFoundException e) {
@@ -204,6 +244,7 @@ public class MainActivity extends Activity {
     // --- Updates: the page shows the question and the bar (rxUpdate in index.html), Updater does the work ---
 
     static MainActivity onScreen;
+    volatile String pushToken = "";
     Updater.Release update;
 
     /** What the page can call as RxNative.*; these run on a binder thread, so the network work goes to its own. */
@@ -212,6 +253,46 @@ public class MainActivity extends Activity {
         @JavascriptInterface public String missing() { return MainActivity.this.missing(); }
 
         @JavascriptInterface public void fix(String what) { runOnUiThread(() -> MainActivity.this.fix(what)); }
+
+        /** This phone's Firebase token, "" until Firebase has it (then the page gets rxPushReady()). */
+        @JavascriptInterface public String pushToken() { return pushToken; }
+
+        /** Your room, its hash and your name, for the widgets and notifications (Widgets, PushService). */
+        @JavascriptInterface public void pushRoom(String room, String hash, String name) {
+            SharedPreferences p = Widgets.prefs(MainActivity.this);
+            if (!room.equals(p.getString("room", ""))) // another room: what was there belongs to the old one
+                p.edit().remove("partner").remove("here").remove("photoFrom").remove("boardFrom").apply();
+            p.edit().putString("room", room).putString("hash", hash).putString("name", name).apply();
+            Widgets.update(MainActivity.this);
+        }
+
+        /** The saved photo or board as a data: URL ("" if none): the board to draw on (openSnap in index.html). */
+        @JavascriptInterface public String image(String which) {
+            java.io.File f = Widgets.file(MainActivity.this, which.equals("board") ? "board" : "photo");
+            try {
+                return f.exists() ? "data:image/jpeg;base64," + android.util.Base64.encodeToString(java.nio.file.Files.readAllBytes(f.toPath()), android.util.Base64.NO_WRAP) : "";
+            } catch (IOException e) {
+                return "";
+            }
+        }
+
+        /** The photo or board you just sent (JPEG, base64), for your own widget. */
+        @JavascriptInterface public void saveImage(String which, String base64) {
+            if (!which.equals("photo") && !which.equals("board")) return;
+            try (java.io.FileOutputStream f = new java.io.FileOutputStream(Widgets.file(MainActivity.this, which))) {
+                f.write(android.util.Base64.decode(base64, android.util.Base64.DEFAULT));
+            } catch (IOException e) {
+                return;
+            }
+            Widgets.prefs(MainActivity.this).edit().putString(which + "From", "").putBoolean(which + "New", false).apply();
+            Widgets.update(MainActivity.this);
+        }
+
+        /** The Invite button: Android's share sheet (WebView has no navigator.share). */
+        @JavascriptInterface public void share(String text) {
+            runOnUiThread(() -> startActivity(Intent.createChooser(
+                    new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), null)));
+        }
 
         /** Battery as JSON {level: 0-100, charging}, for the low-battery popup in a call (rxBattery in index.html). */
         @JavascriptInterface public String battery() {
@@ -493,6 +574,10 @@ public class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         if (onScreen == this) onScreen = null;
+        if (calling) { // swiped away in a room: the page can't say goodbye any more, so the other phone hears it here
+            Context app = getApplicationContext();
+            new Thread(() -> Widgets.send(app, "gone"), "gone").start();
+        }
         duck(false);
         stopMic();
         stopSpeaker();

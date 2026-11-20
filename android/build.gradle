@@ -1,0 +1,56 @@
+// Gradle only because Firebase push needs it (PushService); the layout stays the same as before: AndroidManifest.xml,
+// src/, res/, and the call page ../web bundled as assets/web. Build with ./build.sh.
+plugins {
+    id 'com.android.application' version '8.7.3'
+    id 'com.google.gms.google-services' version '4.4.2' // reads google-services.json (the Firebase project)
+}
+
+// The call page lives in ../web; the APK wants it under assets/web.
+def webAssets = layout.buildDirectory.dir('web-assets')
+tasks.register('webAssets', Sync) {
+    from '../web'
+    into webAssets.map { it.dir('web') }
+}
+preBuild.dependsOn 'webAssets'
+
+android {
+    namespace 'com.andrea.rxconnect'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.andrea.rxconnect'
+        minSdk 26
+        targetSdk 34 // not 35: 35 forces edge-to-edge and the call buttons would sit under the nav bar
+        // Version = commits so far (build.sh passes it): each release is newer for the updater (see ../release.sh).
+        versionCode Integer.parseInt(findProperty('rxVersion') ?: '1')
+        versionName findProperty('rxVersion') ?: '1'
+    }
+    sourceSets.main {
+        manifest.srcFile 'AndroidManifest.xml'
+        java.srcDirs = ['src']
+        res.srcDirs = ['res']
+        assets.srcDirs = [webAssets]
+    }
+    signingConfigs {
+        release { // updates must be signed with this same key
+            storeFile file('signing.keystore')
+            storePassword 'android'
+            keyAlias 'key'
+            keyPassword 'android'
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false // the page calls the bridges by name (RxNative, RxAudio); shrinking would strip them
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    implementation platform('com.google.firebase:firebase-bom:33.7.0')
+    implementation 'com.google.firebase:firebase-messaging'
+}

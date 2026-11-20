@@ -1,0 +1,9 @@
+# rxConnect push server. Deploy: npx wrangler deploy (from this folder). One-time setup in README.md.
+name = "rxconnect-push"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+routes = [{ pattern = "rxsas.it/rxconnect-push/*", zone_name = "rxsas.it" }]
+
+[[kv_namespaces]]
+binding = "ROOMS"
+id = "dfc6df3f4c954d6a92371ecd26147589"

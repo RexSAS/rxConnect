@@ -1,0 +1,55 @@
+<!doctype html>
+<!-- Where invite links land (https://rxsas.it/rxConnect/#room, see the Invite button in web/index.html).
+     With the app installed it opens rxconnect://join#room; otherwise: get the app, or join from the browser
+     (the same call page, published at call/ by .github/workflows/pages.yml). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rxConnect</title>
+<meta name="description" content="You're invited to a call on rxConnect.">
+<style>
+  :root { --bg:#0b0c10; --panel-2:#1f222b; --text:#f2f3f7; --muted:#8b91a1; --accent:#e0457b; --accent-2:#ff7aa8; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; min-height:100%; background:var(--bg); color:var(--text); font:16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { display:flex; align-items:center; justify-content:center; min-height:100vh; padding:16px; background:radial-gradient(circle at 30% 10%, #e0457b33, transparent 55%), radial-gradient(circle at 80% 90%, #6c4bff2e, transparent 55%), var(--bg); }
+  main { width:min(360px,100%); display:flex; flex-direction:column; align-items:center; gap:14px; text-align:center; }
+  .logo { width:84px; height:84px; border-radius:50%; display:grid; place-items:center; background:linear-gradient(140deg, var(--accent-2), var(--accent)); box-shadow:0 10px 40px #e0457b55; }
+  .logo svg { width:40px; height:40px; fill:#fff; }
+  h1 { margin:6px 0 0; font-size:28px; }
+  p { margin:0; color:var(--muted); }
+  b { color:var(--text); }
+  a { width:100%; display:block; padding:14px; border-radius:14px; text-decoration:none; color:var(--text); font-weight:600; background:var(--panel-2); }
+  a.primary { color:#fff; background:linear-gradient(140deg, var(--accent-2), var(--accent)); box-shadow:0 8px 24px #e0457b40; }
+  a:focus-visible { outline:2px solid var(--accent-2); outline-offset:3px; }
+  .small { font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg></div>
+  <h1>rxConnect</h1>
+  <p id="msg">Private video calls for two.</p>
+  <a id="app" class="primary" href="rxconnect://join">Open in the app</a>
+  <a id="web" href="call/">Join from the browser</a>
+  <a id="get" href="https://github.com/RexSAS/rxConnect/releases/latest">Download the app</a>
+  <p class="small">No app? Join from the browser, or download it for Android or Windows.</p>
+</main>
+<script>
+  const hash = location.hash.slice(1); // the room, URL-encoded, passed on as is
+  let room = '';
+  try { room = decodeURIComponent(hash); } catch {}
+  if (room) {
+    document.getElementById('msg').textContent = '';
+    document.getElementById('msg').append('You\'re invited to ', Object.assign(document.createElement('b'), { textContent: room }));
+    document.getElementById('app').href = 'rxconnect://join#' + hash;
+    document.getElementById('web').href = 'call/#' + hash;
+  }
+  const ua = navigator.userAgent, dl = 'https://github.com/RexSAS/rxConnect/releases/latest/download/';
+  if (/Android/i.test(ua)) document.getElementById('get').href = dl + 'rxconnect.apk';
+  else if (/Windows/i.test(ua)) document.getElementById('get').href = dl + 'rxconnect-windows-x86_64-setup.exe';
+  // The apps exist only for these: try them right away; if nothing is installed the page just stays.
+  if (room && /Android|Windows/i.test(ua)) location.href = document.getElementById('app').href;
+</script>
+</body>
+</html>

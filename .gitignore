@@ -2,3 +2,8 @@ android/build/
 android/signing.keystore
 windows/target/
 windows/gen/
+android/.gradle/
+android/local.properties
+push/.wrangler/
+# The Firebase service account key (push/README): a secret, it only goes into the Worker.
+*-firebase-adminsdk-*.json
