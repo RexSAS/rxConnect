@@ -78,6 +78,9 @@ public class Widgets {
             v.setOnClickPendingIntent(R.id.heart, heart);
             v.setOnClickPendingIntent(R.id.name, heart);
             v.setOnClickPendingIntent(R.id.think, room.isEmpty() ? open(c, "") : act(c, "think"));
+            // Set explicitly: launchers reapply onto the existing views, so the tap's pink "Sent" would otherwise stay.
+            v.setInt(R.id.think, "setBackgroundResource", R.drawable.widget_btn);
+            v.setTextViewText(R.id.think, "💭 Thinking of you");
             // She's already there: no need to ask, just join her.
             v.setTextViewText(R.id.call, here ? "📞 Wanna join?" : "📞 Wanna call?");
             v.setOnClickPendingIntent(R.id.call, open(c, here ? "join" : "call"));
