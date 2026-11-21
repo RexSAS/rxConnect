@@ -5,13 +5,18 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 import android.animation.PropertyValuesHolder;
+import android.app.KeyguardManager;
 import android.app.NotificationManager;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.PixelFormat;
 import android.graphics.Typeface;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.provider.Settings;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
@@ -30,7 +35,8 @@ import android.widget.TextView;
 /**
  * A nudge on her screen, over whatever app is open (mockup: the heart buddy): a heart peeks up from the bottom, wiggles
  * with a little message from you, then jumps and pops into tiny hearts. Needs "Display over other apps" (the setup
- * check asks); without it, or with Do Not Disturb on, it's a quiet notification instead.
+ * check asks); without it, or with Do Not Disturb on, it's a quiet notification instead. Sent while her phone is off
+ * or asleep, it waits (the push server keeps it for days) and plays when she unlocks.
  */
 final class Nudge {
     // They take turns, so the same one never comes twice in a row.
@@ -47,7 +53,38 @@ final class Nudge {
             return;
         }
         Context app = c.getApplicationContext();
+        if (!awake(app)) { // screen off, locked or the phone just booted: keep it for when she's looking
+            waitForHer(app, from, line);
+            return;
+        }
         new Handler(Looper.getMainLooper()).post(() -> play(app, from, line));
+    }
+
+    static BroadcastReceiver waiting; // at most one nudge waits; a newer one takes its place
+
+    static boolean awake(Context c) {
+        return c.getSystemService(PowerManager.class).isInteractive() && !c.getSystemService(KeyguardManager.class).isKeyguardLocked();
+    }
+
+    /**
+     * Plays the nudge once she unlocks. Meanwhile it's also a quiet notification, so if Android kills the app before
+     * then the nudge still isn't lost; playing it takes the notification away.
+     */
+    static void waitForHer(Context c, String from, String line) {
+        PushService.love(c, from + ": " + line);
+        if (waiting != null) c.unregisterReceiver(waiting);
+        waiting = new BroadcastReceiver() {
+            @Override public void onReceive(Context x, Intent i) {
+                if (!awake(c)) return; // screen on but still locked: USER_PRESENT comes next
+                c.unregisterReceiver(this);
+                waiting = null;
+                c.getSystemService(NotificationManager.class).cancel(PushService.LOVE);
+                new Handler(Looper.getMainLooper()).postDelayed(() -> play(c, from, line), 500); // after the unlock animation
+            }
+        };
+        IntentFilter f = new IntentFilter(Intent.ACTION_USER_PRESENT);
+        f.addAction(Intent.ACTION_SCREEN_ON); // no lock screen: there's no USER_PRESENT on some phones
+        c.registerReceiver(waiting, f);
     }
 
     static void play(Context c, String from, String line) {

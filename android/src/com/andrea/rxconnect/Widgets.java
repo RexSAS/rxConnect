@@ -162,9 +162,17 @@ public class Widgets {
             final Context app = c.getApplicationContext();
             if (kind.equals("nudge")) { // you see it go: hearts burst from the one you tapped
                 flash(app);
-                Nudge.sent(app, i.getSourceBounds());
-                new Handler(Looper.getMainLooper()).postDelayed(() -> update(app), 1200);
+            } else { // the button goes pink with "Sent", hearts fly up from it
+                AppWidgetManager m = AppWidgetManager.getInstance(app);
+                for (int id : m.getAppWidgetIds(new ComponentName(app, Big.class))) {
+                    RemoteViews v = new RemoteViews(app.getPackageName(), R.layout.widget_big);
+                    v.setInt(R.id.think, "setBackgroundResource", R.drawable.widget_btn_pink);
+                    v.setTextViewText(R.id.think, "💗 Sent");
+                    m.partiallyUpdateAppWidget(id, v);
+                }
             }
+            Nudge.sent(app, i.getSourceBounds());
+            new Handler(Looper.getMainLooper()).postDelayed(() -> update(app), 1200); // back to normal
             new Thread(() -> {
                 boolean ok = send(app, kind);
                 new Handler(Looper.getMainLooper()).post(() -> Toast.makeText(app,

@@ -84,10 +84,12 @@ async function send(env, tokens, data) {
   const auth = 'Bearer ' + await accessToken(sa);
   const gone = [];
   await Promise.all(tokens.map(async token => {
+    // A nudge waits for a phone that's off (FCM keeps it up to 28 days); the rest are stale after 10 minutes.
+    const ttl = data.kind === 'nudge' ? '2419200s' : '600s';
     const r = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
       method: 'POST',
       headers: { authorization: auth, 'content-type': 'application/json' },
-      body: JSON.stringify({ message: { token, data, android: { priority: 'high', ttl: '600s' } } }),
+      body: JSON.stringify({ message: { token, data, android: { priority: 'high', ttl } } }),
     });
     if (r.status === 404) gone.push(token);
   }));
