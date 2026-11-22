@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 2x2: the last photo between you. Tap: take a photo for them in the app. -->
+<!-- 2x2: their last photo to you. Tap: see it in the app, with "Send one". -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root" android:layout_width="match_parent" android:layout_height="match_parent"
     android:background="@drawable/widget_bg" android:clipToOutline="true">
     <TextView android:id="@+id/empty" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center"
         android:text="📷&#10;Tap to send a photo" android:textColor="#8B91A1" android:textSize="12sp" />
     <ImageView android:id="@+id/image" android:layout_width="match_parent" android:layout_height="match_parent"
-        android:scaleType="centerCrop" android:visibility="gone" android:contentDescription="the last photo between you." />
+        android:scaleType="centerCrop" android:visibility="gone" android:contentDescription="Their last photo" />
     <ImageView android:id="@+id/dot" android:layout_width="12dp" android:layout_height="12dp" android:layout_gravity="top|end"
         android:layout_margin="10dp" android:src="@drawable/widget_dot" android:visibility="gone" android:contentDescription="New" />
     <TextView android:id="@+id/cap" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="bottom|start"

@@ -75,13 +75,22 @@ public class MainActivity extends Activity {
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
-            // The chat's photo/video button: WebView shows no file picker by itself.
+            // The chat's photo/video button: WebView shows no file picker by itself. capture (the photo widget's
+            // "Send one"): the phone's camera app, writing the full-size photo into shot.jpg through Shot.
             @Override public boolean onShowFileChooser(WebView v, ValueCallback<Uri[]> cb, FileChooserParams params) {
                 if (pick != null) pick.onReceiveValue(null);
                 pick = cb;
+                shooting = params.isCaptureEnabled();
+                Intent i = params.createIntent();
+                if (shooting) {
+                    Shot.file(MainActivity.this).delete();
+                    i = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
+                            .putExtra(android.provider.MediaStore.EXTRA_OUTPUT, Uri.parse("content://" + getPackageName() + ".shot/shot.jpg"))
+                            .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                }
                 try {
-                    startActivityForResult(params.createIntent(), PICK);
-                } catch (android.content.ActivityNotFoundException e) {
+                    startActivityForResult(i, PICK);
+                } catch (android.content.ActivityNotFoundException | SecurityException e) { // no camera app, or camera denied
                     pick = null;
                     return false;
                 }
@@ -120,11 +129,28 @@ public class MainActivity extends Activity {
 
     static final int PICK = 2;
     ValueCallback<Uri[]> pick;
+    boolean shooting;
 
     @Override protected void onActivityResult(int code, int result, Intent data) {
         if (code != PICK || pick == null) return;
-        pick.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result, data));
+        java.io.File shot = Shot.file(this);
+        pick.onReceiveValue(!shooting ? WebChromeClient.FileChooserParams.parseResult(result, data)
+                : result == RESULT_OK && shot.length() > 0 ? new Uri[] {Uri.fromFile(shot)} : null);
         pick = null;
+    }
+
+    /** Where the camera app writes the photo you take (shot.jpg in the app's cache): it can't reach our files otherwise. */
+    public static class Shot extends android.content.ContentProvider {
+        static java.io.File file(Context c) { return new java.io.File(c.getCacheDir(), "shot.jpg"); }
+        @Override public boolean onCreate() { return true; }
+        @Override public android.os.ParcelFileDescriptor openFile(Uri uri, String mode) throws java.io.FileNotFoundException {
+            return android.os.ParcelFileDescriptor.open(file(getContext()), android.os.ParcelFileDescriptor.parseMode(mode));
+        }
+        @Override public String getType(Uri uri) { return "image/jpeg"; }
+        @Override public android.database.Cursor query(Uri u, String[] p, String s, String[] a, String o) { return null; }
+        @Override public Uri insert(Uri u, android.content.ContentValues v) { return null; }
+        @Override public int delete(Uri u, String s, String[] a) { return 0; }
+        @Override public int update(Uri u, android.content.ContentValues v, String s, String[] a) { return 0; }
     }
 
     @Override public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
@@ -266,8 +292,17 @@ public class MainActivity extends Activity {
             Widgets.update(MainActivity.this);
         }
 
-        /** The saved photo or board as a data: URL ("" if none): the board to draw on (openSnap in index.html). */
+        /** Whether someone is in your room, as the home screen just saw it: fixes the widget if a "gone" never came. */
+        @JavascriptInterface public void roomHere(String room, boolean here) {
+            SharedPreferences p = Widgets.prefs(MainActivity.this);
+            if (!room.equals(p.getString("room", "")) || p.getBoolean("here", false) == here) return;
+            p.edit().putBoolean("here", here).apply();
+            Widgets.update(MainActivity.this);
+        }
+
+        /** The saved board, or their last photo, as a data: URL ("" if none) (openSnap in index.html). */
         @JavascriptInterface public String image(String which) {
+            if (!which.equals("board") && Widgets.prefs(MainActivity.this).getString("photoFrom", "").isEmpty()) return "";
             java.io.File f = Widgets.file(MainActivity.this, which.equals("board") ? "board" : "photo");
             try {
                 return f.exists() ? "data:image/jpeg;base64," + android.util.Base64.encodeToString(java.nio.file.Files.readAllBytes(f.toPath()), android.util.Base64.NO_WRAP) : "";
@@ -276,9 +311,9 @@ public class MainActivity extends Activity {
             }
         }
 
-        /** The photo or board you just sent (JPEG, base64), for your own widget. */
+        /** The board you just drew (JPEG, base64), for your own widget. Not your photos: that widget shows only theirs. */
         @JavascriptInterface public void saveImage(String which, String base64) {
-            if (!which.equals("photo") && !which.equals("board")) return;
+            if (!which.equals("board")) return;
             try (java.io.FileOutputStream f = new java.io.FileOutputStream(Widgets.file(MainActivity.this, which))) {
                 f.write(android.util.Base64.decode(base64, android.util.Base64.DEFAULT));
             } catch (IOException e) {

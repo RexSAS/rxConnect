@@ -452,7 +452,7 @@
   <div class="sbar"><b id="snapTitle"></b><button id="snapX" class="btn">Cancel</button></div>
   <div class="sview"><video id="snapVid" class="mirror" autoplay playsinline muted></video><canvas id="snapCv" width="720" height="720"></canvas></div>
   <div id="snapTools"></div>
-  <div class="srow"><button id="snapRetake" class="btn" hidden>Retake</button><button id="snapClear" class="btn" hidden>Clear</button><button id="snapShoot" aria-label="Take photo"></button><button id="snapSend" class="btn go" hidden>Send 💗</button></div>
+  <div class="srow"><button id="snapRetake" class="btn" hidden>Retake</button><button id="snapClear" class="btn" hidden>Clear</button><button id="snapShoot" aria-label="Take photo"></button><button id="snapNew" class="btn go" hidden>Send one 📷</button><input id="snapFile" type="file" accept="image/*" capture="user" hidden><button id="snapSend" class="btn go" hidden>Send 💗</button></div>
 </div>
 
 <div id="name" hidden role="dialog" aria-modal="true" aria-labelledby="nameTitle">
@@ -570,7 +570,9 @@ async function checkRoom() {
   if (!room || $('join').style.display === 'none') return showWho(0);
   const p = await probePeer();
   const n = (await Promise.all([1, 2].map(i => occupied(p, slotId(room, i))))).filter(Boolean).length;
-  if (seq === probeSeq && $('room').value.trim() === room) showWho(n);
+  if (seq !== probeSeq || $('room').value.trim() !== room) return;
+  showWho(n);
+  if (window.RxNative && RxNative.roomHere) RxNative.roomHere(room, n > 0); // the widget, in case a "gone" got lost
 }
 $('room').addEventListener('input', () => { showWho(0); clearTimeout(probeTimer); probeTimer = setTimeout(checkRoom, 600); });
 const whoTimer = setInterval(checkRoom, 10000);
@@ -646,21 +648,59 @@ async function openSnap(which) {
   const cv = $('snapCv'), g = cv.getContext('2d');
   $('snapTitle').textContent = which === 'photo' ? 'A photo for them 💗' : 'Our board ✏️';
   $('snap').classList.toggle('board', which === 'board');
-  $('snapShoot').hidden = which !== 'photo';
-  $('snapRetake').hidden = true;
+  $('snapShoot').hidden = $('snapNew').hidden = $('snapRetake').hidden = true;
   $('snapSend').hidden = $('snapClear').hidden = $('snapTools').hidden = which === 'photo';
-  cv.hidden = which === 'photo'; $('snapVid').hidden = which !== 'photo';
+  cv.hidden = which === 'photo'; $('snapVid').hidden = true;
   openDialog($('snap'));
   if (which === 'photo') {
-    try { snap.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 1280, height: 1280 } }); }
-    catch { toast('No camera'); return closeSnap(); }
-    $('snapVid').srcObject = snap.stream;
+    // Their last photo first, with "Send one"; none yet: straight to the camera.
+    const url = window.RxNative && RxNative.image ? RxNative.image('photo') : '';
+    // Android opens its camera app, which needs a tap first (a file picker needs one): there it's "Send one".
+    if (!url && !nativeCam) return snapCamera();
+    $('snapNew').hidden = !!url;
+    if (!url) return;
+    $('snapTitle').textContent = 'A photo for you 💗';
+    const img = new Image();
+    img.onload = () => { if (snap && !snap.stream) { g.drawImage(img, 0, 0, cv.width, cv.height); cv.hidden = false; $('snapNew').hidden = false; } };
+    img.src = url;
   } else {
     const url = window.RxNative && RxNative.image ? RxNative.image('board') : '';
     if (url) { const img = new Image(); img.onload = () => { if (snap) { snap.bg = img; drawBoard(); } }; img.src = url; }
     drawBoard();
   }
 }
+// Android: the phone's camera app (MainActivity.onShowFileChooser); elsewhere a live preview in the app.
+const nativeCam = !!(window.RxNative && RxNative.image);
+async function snapCamera() {
+  if (nativeCam) return $('snapFile').click();
+  $('snapTitle').textContent = 'A photo for them 💗';
+  $('snapNew').hidden = true; $('snapCv').hidden = true;
+  const s = snap;
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 1280, height: 1280 } }); }
+  catch { toast('No camera'); return closeSnap(); }
+  if (snap !== s) return stream.getTracks().forEach(t => t.stop()); // closed meanwhile
+  $('snapVid').srcObject = snap.stream = stream;
+  $('snapVid').hidden = false; $('snapShoot').hidden = false;
+}
+$('snapNew').onclick = snapCamera;
+$('snapFile').onchange = () => {
+  const f = $('snapFile').files[0];
+  $('snapFile').value = '';
+  if (!f || !snap) return;
+  const img = new Image(), u = URL.createObjectURL(f);
+  img.onload = () => {
+    URL.revokeObjectURL(u);
+    if (!snap) return;
+    const cv = $('snapCv'), s = Math.min(img.naturalWidth, img.naturalHeight); // square from the middle, like the widget
+    cv.getContext('2d').drawImage(img, (img.naturalWidth - s) / 2, (img.naturalHeight - s) / 2, s, s, 0, 0, cv.width, cv.height);
+    $('snapTitle').textContent = 'A photo for them 💗';
+    cv.hidden = false; $('snapNew').hidden = true;
+    $('snapRetake').hidden = $('snapSend').hidden = false;
+  };
+  img.onerror = () => { URL.revokeObjectURL(u); toast("Couldn't open the photo"); };
+  img.src = u;
+};
 function closeSnap() {
   if (!snap) return;
   snap.stream && snap.stream.getTracks().forEach(t => t.stop());
@@ -707,7 +747,9 @@ $('snapShoot').onclick = () => {
   cv.hidden = false; v.hidden = true;
   $('snapShoot').hidden = true; $('snapRetake').hidden = $('snapSend').hidden = false;
 };
-$('snapRetake').onclick = () => { $('snapCv').hidden = true; $('snapVid').hidden = false; $('snapShoot').hidden = false; $('snapRetake').hidden = $('snapSend').hidden = true; };
+$('snapRetake').onclick = () => {
+  if (nativeCam) return snapCamera();
+  $('snapCv').hidden = true; $('snapVid').hidden = false; $('snapShoot').hidden = false; $('snapRetake').hidden = $('snapSend').hidden = true; };
 $('snapSend').onclick = async () => {
   const { which, room } = snap;
   const jpeg = $('snapCv').toDataURL('image/jpeg', .85).split(',')[1];

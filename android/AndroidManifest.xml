@@ -50,6 +50,9 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+        <!-- The camera app writes the photo for the photo widget's "Send one" here (MainActivity.Shot). -->
+        <provider android:name=".MainActivity$Shot" android:authorities="${applicationId}.shot"
+            android:exported="false" android:grantUriPermissions="true" />
         <!-- Home-screen widgets (Widgets.java); Act: their taps that don't open the app. -->
         <receiver android:name=".Widgets$Big" android:exported="true" android:label="rxConnect">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>

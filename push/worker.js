@@ -84,8 +84,9 @@ async function send(env, tokens, data) {
   const auth = 'Bearer ' + await accessToken(sa);
   const gone = [];
   await Promise.all(tokens.map(async token => {
-    // A nudge waits for a phone that's off (FCM keeps it up to 28 days); the rest are stale after 10 minutes.
-    const ttl = data.kind === 'nudge' ? '2419200s' : '600s';
+    // A nudge waits for a phone that's off (FCM keeps it up to 28 days), and so does "gone", or the widget would say
+    // she's still in the room; the rest are stale after 10 minutes.
+    const ttl = ['nudge', 'gone'].includes(data.kind) ? '2419200s' : '600s';
     const r = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
       method: 'POST',
       headers: { authorization: auth, 'content-type': 'application/json' },

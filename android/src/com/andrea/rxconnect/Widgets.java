@@ -34,7 +34,7 @@ import org.json.JSONObject;
 /**
  * Home-screen widgets (mockup: "rxConnect widgets") and what they share with PushService:
  * Big (4x2): heart + who's in the room + Thinking of you + Wanna call?  Heart (2x2).  Board (2x2): your shared drawing.
- * Photo (2x2): the last photo between you.
+ * Photo (2x2): their last photo to you (never yours); tap: see it, with "Send one".
  *
  * State, in the "push" preferences: room, hash (its SHA-256, what the server knows), name (yours), token (Firebase),
  * partner (their name), here (they're in the room), photoFrom / boardFrom ("" = you sent it), photoNew / boardNew.
@@ -102,9 +102,10 @@ public class Widgets {
         int[] ids = m.getAppWidgetIds(new ComponentName(c, provider));
         if (ids.length == 0) return;
         SharedPreferences p = prefs(c);
-        Bitmap img = thumb(file(c, which), 500);
         String from = p.getString(which + "From", "");
-        String cap = which.equals("photo") ? (from.isEmpty() ? "Sent ✓" : "from " + from)
+        // The photo widget shows only theirs (a photo you sent before this rule stays hidden).
+        Bitmap img = which.equals("photo") && from.isEmpty() ? null : thumb(file(c, which), 500);
+        String cap = which.equals("photo") ? "from " + from
                 : (from.isEmpty() ? "You drew something" : from + " drew something ✏️");
         for (int id : ids) {
             RemoteViews v = new RemoteViews(c.getPackageName(), layout);
