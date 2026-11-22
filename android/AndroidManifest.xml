@@ -71,6 +71,7 @@
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_photo" />
         </receiver>
         <receiver android:name=".Widgets$Act" android:exported="false" />
+        <service android:name=".Widgets$Send" android:exported="false" android:foregroundServiceType="shortService" />
         <receiver android:name=".Updater$Status" android:exported="false" />
         <receiver android:name=".Updater$Replaced" android:exported="false">
             <intent-filter>

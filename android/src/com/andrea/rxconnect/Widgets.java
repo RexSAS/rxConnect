@@ -1,7 +1,10 @@
 package com.andrea.rxconnect;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.app.Service;
 import android.appwidget.AppWidgetManager;
 import android.appwidget.AppWidgetProvider;
 import android.content.BroadcastReceiver;
@@ -9,9 +12,12 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.os.Build;
 import android.os.Handler;
+import android.os.IBinder;
 import android.os.Looper;
 import android.widget.RemoteViews;
 import android.widget.Toast;
@@ -140,9 +146,11 @@ public class Widgets {
     }
 
     // Mutable (to our own receiver only): the launcher then adds where the tap was (getSourceBounds), for Nudge.sent.
+    // nudge/think go to the Send service: Battery Saver and Doze cut a background receiver's internet, not a foreground service's.
     static PendingIntent act(Context c, String kind) {
-        return PendingIntent.getBroadcast(c, ("act" + kind).hashCode(), new Intent(c, Act.class).setAction(kind),
-                PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        int f = PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT, code = ("act" + kind).hashCode();
+        return "later".equals(kind) ? PendingIntent.getBroadcast(c, code, new Intent(c, Act.class).setAction(kind), f)
+                : PendingIntent.getForegroundService(c, code, new Intent(c, Send.class).setAction(kind), f);
     }
 
     /** The widget hearts in pink for a moment: your nudge going out. update() puts them back. */
@@ -156,14 +164,26 @@ public class Widgets {
             }
     }
 
-    /** Taps that don't open the app: nudge, think (Thinking of you), later (dismiss a "wanna call?"). */
+    /** "Later" on a "wanna call?" notification: dismiss it. */
     public static class Act extends BroadcastReceiver {
         @Override public void onReceive(Context c, Intent i) {
-            String kind = i.getAction();
-            if ("later".equals(kind)) { c.getSystemService(NotificationManager.class).cancel(PushService.CALL); return; }
-            if (!"nudge".equals(kind) && !"think".equals(kind)) return;
-            final PendingResult r = goAsync();
-            final Context app = c.getApplicationContext();
+            if ("later".equals(i.getAction())) c.getSystemService(NotificationManager.class).cancel(PushService.CALL);
+        }
+    }
+
+    /** Widget taps that don't open the app: nudge, think (Thinking of you). A short foreground service, for the internet. */
+    public static class Send extends Service {
+        @Override public IBinder onBind(Intent i) { return null; }
+
+        @Override public int onStartCommand(Intent i, int flags, int startId) {
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            nm.createNotificationChannel(new NotificationChannel("sending", "Sending from the widget", NotificationManager.IMPORTANCE_MIN));
+            Notification n = new Notification.Builder(this, "sending").setSmallIcon(R.drawable.heart_on).setContentTitle("Sending…").build();
+            if (Build.VERSION.SDK_INT >= 34) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE);
+            else startForeground(1, n);
+            String kind = i == null ? null : i.getAction();
+            if (!"nudge".equals(kind) && !"think".equals(kind)) { stopSelf(startId); return START_NOT_STICKY; }
+            final Context app = getApplicationContext();
             if (kind.equals("nudge")) { // you see it go: hearts burst from the one you tapped
                 flash(app);
             } else { // the button goes pink with "Sent", hearts fly up from it
@@ -176,14 +196,20 @@ public class Widgets {
                 }
             }
             Nudge.sent(app, i.getSourceBounds());
-            new Handler(Looper.getMainLooper()).postDelayed(() -> update(app), 1200); // back to normal
+            Handler main = new Handler(Looper.getMainLooper());
+            main.postDelayed(() -> update(app), 1200); // back to normal
             new Thread(() -> {
                 boolean ok = send(app, kind);
-                new Handler(Looper.getMainLooper()).post(() -> Toast.makeText(app,
-                        !ok ? "Couldn't send: check your connection" : kind.equals("nudge") ? "💗 Nudge sent" : "💭 Sent", Toast.LENGTH_SHORT).show());
-                r.finish();
+                main.post(() -> {
+                    Toast.makeText(app, !ok ? "Couldn't send: check your connection" : kind.equals("nudge") ? "💗 Nudge sent" : "💭 Sent",
+                            Toast.LENGTH_SHORT).show();
+                    stopSelf(startId);
+                });
             }, "widget-send").start();
+            return START_NOT_STICKY;
         }
+
+        @Override public void onTimeout(int startId) { stopSelf(); } // shortService's 3 minutes: send() gives up long before
     }
 
     /** One of POST /send's kinds (push/worker.js) to the other phones of your room. Network: not on the main thread. */
