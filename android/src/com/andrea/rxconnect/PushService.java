@@ -19,7 +19,7 @@ import java.util.Map;
 /**
  * Messages from the other phone of your room, through the push server (../push) and Firebase. They carry only a kind,
  * the sender's name and, for images, which one; the room name stays on the phones (it's the images' key too).
- *   here / gone: they joined / left the room (widgets, and "<name> is online in <room> room 💗")
+ *   here / gone: they joined / left the room (widgets, and "<name> is online in <room> room 💗", their note below)
  *   nudge: the heart on your screen (Nudge)    think: "<name> is thinking of you 💗"
  *   call: "<name> wants to call 💗" with Join / Later    image: a photo or the board, fetched and decrypted here
  */
@@ -38,7 +38,7 @@ public class PushService extends FirebaseMessagingService {
             case "here":
                 p.edit().putBoolean("here", true).apply();
                 Widgets.update(this);
-                if (!inCall()) note(this, ONLINE, name + " is online in " + room + " room 💗", null, Widgets.open(this, "join"), null);
+                if (!inCall()) note(this, ONLINE, name + " is online in " + room + " room 💗", d.get("text"), Widgets.open(this, "join"), null);
                 break;
             case "gone":
                 p.edit().putBoolean("here", false).apply();
@@ -100,7 +100,7 @@ public class PushService extends FirebaseMessagingService {
                 .setContentTitle(title)
                 .setContentIntent(tap)
                 .setAutoCancel(true);
-        if (text != null) n.setContentText(text);
+        if (text != null && !text.isEmpty()) n.setContentText(text).setStyle(new Notification.BigTextStyle().bigText(text)); // a long note unfolds
         if (picture != null) n.setLargeIcon(picture).setStyle(new Notification.BigPictureStyle().bigPicture(picture).bigLargeIcon((android.graphics.drawable.Icon) null));
         for (Notification.Action a : actions) n.addAction(a);
         nm.notify(id, n.build());

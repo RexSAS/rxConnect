@@ -157,11 +157,11 @@
   .idle { cursor:none; }
 
   /* ---------- Update dialog ---------- */
-  #upd, #set, #perm, #pick, #name { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; background:#000b; z-index:10; animation:fade .25s ease both; }
-  #upd .box, #set .box, #perm .box, #pick .box, #name .box { width:min(360px,100%); background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:22px; animation:pop .35s var(--ease) both; }
-  #upd .head, #set .head, #perm .head, #pick .head, #name .head { display:flex; align-items:center; gap:12px; }
-  #upd .head .ic, #set .head .ic, #perm .head .ic, #pick .head .ic, #name .head .ic { width:40px; height:40px; border-radius:12px; display:grid; place-items:center; background:#e0457b22; color:var(--accent-2); }
-  #upd b, #set b, #perm b, #pick .head b, #name b { font-size:18px; }
+  #upd, #set, #perm, #pick, #name, #note { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; background:#000b; z-index:10; animation:fade .25s ease both; }
+  #upd .box, #set .box, #perm .box, #pick .box, #name .box, #note .box { width:min(360px,100%); background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:22px; animation:pop .35s var(--ease) both; }
+  #upd .head, #set .head, #perm .head, #pick .head, #name .head, #note .head { display:flex; align-items:center; gap:12px; }
+  #upd .head .ic, #set .head .ic, #perm .head .ic, #pick .head .ic, #name .head .ic, #note .head .ic { width:40px; height:40px; border-radius:12px; display:grid; place-items:center; background:#e0457b22; color:var(--accent-2); }
+  #upd b, #set b, #perm b, #pick .head b, #name b, #note b { font-size:18px; }
   /* Our own screen / window picker (Windows app, nativeShare) */
   #pick .box { width:min(760px,100%); max-height:calc(100vh - 32px); display:flex; flex-direction:column; }
   #pick .head b { flex:1; }
@@ -191,10 +191,11 @@
   #snapShoot:active { transform:scale(.9); }
   #name { backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); } /* the start screen behind, still: no stutter */
   #name .box { display:flow-root; } /* holds the floated button */
-  #updText, #permText, #name p { color:var(--muted); margin:14px 0 18px; }
+  #updText, #permText, #name p, #note p { color:var(--muted); margin:14px 0 18px; }
   #updBar { height:8px; border-radius:4px; background:var(--panel-2); overflow:hidden; }
   #updBar i { display:block; height:100%; width:0; border-radius:4px; background:linear-gradient(90deg, var(--accent), var(--accent-2)); transition:width .3s ease; }
-  #updBtns, #permBtns { display:flex; gap:10px; justify-content:flex-end; }
+  #noteBtns { margin-top:16px; }
+  #updBtns, #permBtns, #noteBtns { display:flex; gap:10px; justify-content:flex-end; }
   #gear { position:absolute; right:calc(16px + env(safe-area-inset-right)); top:calc(16px + env(safe-area-inset-top)); width:44px; height:44px; border-radius:50%; display:grid; place-items:center; border:1px solid var(--line); background:var(--panel); color:var(--muted); transition:transform .3s var(--ease), color .2s; }
   #gear:hover { color:var(--text); transform:rotate(45deg); }
   #set label { display:flex; flex-direction:column; gap:6px; margin:16px 0 0; color:var(--muted); font-size:14px; }
@@ -206,7 +207,7 @@
   .sc button:hover { border-color:#ffffff40; }
   .sc button.empty { color:var(--muted); font-weight:400; }
   .sc button.listening { border-color:var(--accent); color:var(--accent-2); box-shadow:0 0 0 4px #e0457b26; animation:blink 1.2s ease-in-out infinite; }
-  #set input, #name input { width:100%; padding:12px; border-radius:12px; border:1px solid var(--line); background:var(--panel-2); color:var(--text); font:inherit; }
+  #set input, #name input, #note input { width:100%; padding:12px; border-radius:12px; border:1px solid var(--line); background:var(--panel-2); color:var(--text); font:inherit; }
   #name .btn { margin-top:16px; float:right; }
   #set select { padding:12px; border-radius:12px; border:1px solid var(--line); background:var(--panel-2); color:var(--text); font:inherit; }
   #set .btn { margin-top:20px; float:right; }
@@ -464,6 +465,15 @@
   </div>
 </div>
 
+<div id="note" hidden role="dialog" aria-modal="true" aria-labelledby="noteTitle">
+  <div class="box">
+    <div class="head"><div class="ic"><svg class="i"><use href="#i-user"/></svg></div><b id="noteTitle">Tell them you're here</b></div>
+    <p>They get "you're online in the room". Add a few words to it?</p>
+    <input id="noteIn" maxlength="200" autocomplete="off" aria-label="Your message" placeholder="Come say hi 💗">
+    <div id="noteBtns"><button id="noteSkip" class="btn">Just join</button><button id="noteGo" class="btn go">Send</button></div>
+  </div>
+</div>
+
 <div id="perm" hidden role="dialog" aria-modal="true" aria-labelledby="permTitle">
   <div class="box">
     <div class="head"><div class="ic"><svg class="i"><use href="#i-gear"/></svg></div><b id="permTitle">One more step</b></div>
@@ -597,14 +607,14 @@ async function roomHash(room) {
 }
 const push = (path, body) => fetch(PUSH + path, { method: 'POST', body: JSON.stringify({ token: pushToken(), name: myName(), ...body }) });
 let joinedHash = null; // the room you're in, for "gone" when you leave
-async function announce(room, here) {
+async function announce(room, here, text = '') {
   const token = pushToken();
   if (!room || (!here && !token)) return;
   try {
     const hash = await roomHash(room);
     if (token && RxNative.pushRoom) RxNative.pushRoom(room, hash, myName()); // the widgets and notifications use these
     if (here) joinedHash = hash;
-    await push('room', { room: hash, here });
+    await push('room', { room: hash, here, text });
   } catch {} // offline or server down: the call works without it
 }
 // Left the room (hang up, or the page closing): the other phone's widget stops showing you there.
@@ -623,6 +633,7 @@ window.rxOpen = async what => {
   const room = $('room').value.trim();
   if (!room) return $('room').focus();
   if (what === 'call') push('send', { room: await roomHash(room), kind: 'call' }).catch(() => {});
+  quickJoin = what === 'call'; // they already got "wants to call": no note
   $('go').click();
 };
 { const what = new URLSearchParams(location.search).get('open'); if (what) setTimeout(() => rxOpen(what), 2700); } // after the splash
@@ -787,8 +798,17 @@ $('go').onclick = async () => {
   watchBattery();
   if (window.RxAudio) { RxAudio.inCall(room); tellApp(); } // Android: the "Calling on <room>" notification
   join(room, 1);
-  announce(room, true);
+  if (quickJoin) { quickJoin = false; return announce(room, true); }
+  // "<name> is online" waits for the note (or "Just join"): one notification on their phone, with your words in it.
+  $('noteIn').value = '';
+  openDialog($('note'));
+  $('noteIn').focus();
+  const send = text => { closeDialog($('note')); announce(room, true, text.trim()); };
+  $('noteGo').onclick = () => send($('noteIn').value);
+  $('noteSkip').onclick = () => send('');
+  $('noteIn').onkeydown = e => { if (e.key === 'Enter') $('noteGo').click(); };
 };
+let quickJoin = false;
 // Mute / camera state to the other person, so they see it. Each side opens its own one-way channel when the call
 // connects (no "who opens it" race when both dial at once) and sends on every change.
 let tell;

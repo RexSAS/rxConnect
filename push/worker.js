@@ -1,8 +1,9 @@
 // rxConnect push server (Cloudflare Worker at rxsas.it/rxconnect-push/): relays between the phones of a room, through
 // Firebase. The server never sees room names, only their SHA-256 (announce in web/index.html).
 //
-// POST /room  {room, token, here, name}  An Android phone (token = its Firebase token) signs up for the room, leaving
-//             the one it was in before. here: someone joined, so the room's other phones get {kind: 'here', name}.
+// POST /room  {room, token, here, name, text}  An Android phone (token = its Firebase token) signs up for the room, leaving
+//             the one it was in before. here: someone joined, so the room's other phones get {kind: 'here', name}, plus
+//             text (their note, up to 200 chars) when there is one.
 //             Windows and browsers send token "" (they only join, they get no pushes).
 // POST /send  {room, token, kind, name}  kind: 'gone' (left the room), 'nudge', 'think' (thinking of you), 'call'
 //             (wanna call?): passed on to the room's other phones as {kind, name}.
@@ -36,9 +37,10 @@ export default {
     if (!isRoom(room) || typeof token !== 'string' || token.length > 4096 || typeof name !== 'string' || name.length > 40)
       return reply('Bad request', 400);
     if (path === 'room') {
-      if (typeof b.here !== 'boolean') return reply('Bad request', 400);
+      const { text = '' } = b;
+      if (typeof b.here !== 'boolean' || typeof text !== 'string' || text.length > 200) return reply('Bad request', 400);
       await signUp(env, room, token);
-      if (b.here) await relay(env, room, token, { kind: 'here', name });
+      if (b.here) await relay(env, room, token, text ? { kind: 'here', name, text } : { kind: 'here', name });
     } else if (path === 'send') {
       if (!KINDS.includes(b.kind)) return reply('Bad request', 400);
       await relay(env, room, token, { kind: b.kind, name });

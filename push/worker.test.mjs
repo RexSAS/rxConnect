@@ -46,6 +46,11 @@ test('joining tells the other phones, with the name, not yourself; every time', 
   await call('POST', 'room', { room: R1, token: 'B', here: true, name: 'Andrea' });
   assert.equal(take().length, 1);
 });
+test('joining can carry a note; too long is refused', async () => {
+  await call('POST', 'room', { room: R1, token: 'B', here: true, name: 'Andrea', text: 'come say hi' });
+  assert.deepEqual(take(), [{ token: 'A', kind: 'here', name: 'Andrea', text: 'come say hi' }]);
+  assert.equal((await call('POST', 'room', { room: R1, token: 'B', here: true, text: 'x'.repeat(201) })).status, 400);
+});
 test('leaving, nudges, thinking of you and wanna call are passed on', async () => {
   for (const kind of ['gone', 'nudge', 'think', 'call']) {
     assert.equal((await call('POST', 'send', { room: R1, token: 'A', kind, name: 'Alex' })).status, 200);
