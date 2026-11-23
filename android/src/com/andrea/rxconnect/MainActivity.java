@@ -20,6 +20,7 @@ import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Rational;
+import android.view.KeyEvent;
 import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
@@ -239,6 +240,17 @@ public class MainActivity extends Activity {
     // --- Floating window: leaving the app during a call shrinks it to picture-in-picture, like WhatsApp ---
 
     boolean calling; // in a room: set by inCall, cleared when the page reloads on leaving
+
+    // In a room the phone is in call mode, so the volume keys would change the call volume, but her voice (and
+    // everything the app plays) is media: point them at that.
+    @Override public boolean dispatchKeyEvent(KeyEvent e) {
+        int k = e.getKeyCode();
+        if (!calling || (k != KeyEvent.KEYCODE_VOLUME_UP && k != KeyEvent.KEYCODE_VOLUME_DOWN)) return super.dispatchKeyEvent(e);
+        if (e.getAction() == KeyEvent.ACTION_DOWN)
+            getSystemService(AudioManager.class).adjustStreamVolume(AudioManager.STREAM_MUSIC,
+                    k == KeyEvent.KEYCODE_VOLUME_UP ? AudioManager.ADJUST_RAISE : AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI);
+        return true;
+    }
 
     // Android 12+: auto-enter (autoPip) is what reliably catches the home gesture; older ones get this.
     @Override protected void onUserLeaveHint() { if (Build.VERSION.SDK_INT < 31) pip(); }
