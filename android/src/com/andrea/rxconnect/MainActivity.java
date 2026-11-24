@@ -163,7 +163,10 @@ public class MainActivity extends Activity {
 
     /** What a widget or notification asked to open (Widgets.open): join, call, photo, board; null otherwise. */
     String opened(Intent i) {
-        String what = i == null ? null : i.getStringExtra("what");
+        // Reopened from Recents, Android hands back the old widget intent: not a new tap.
+        if (i == null || (i.getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return null;
+        String what = i.getStringExtra("what");
+        i.removeExtra("what"); // used once: an activity recreated (rotation, theme) gets getIntent() again
         if (!"join".equals(what) && !"call".equals(what) && !"photo".equals(what) && !"board".equals(what)) return null;
         if (what.equals("photo") || what.equals("board")) { // seen: the widget's "new" dot goes
             Widgets.prefs(this).edit().putBoolean(what + "New", false).apply();

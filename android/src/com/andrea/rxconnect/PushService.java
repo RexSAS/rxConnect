@@ -38,7 +38,8 @@ public class PushService extends FirebaseMessagingService {
             case "here":
                 p.edit().putBoolean("here", true).apply();
                 Widgets.update(this);
-                if (!inCall()) note(this, ONLINE, name + " is online in " + room + " room 💗", d.get("text"), Widgets.open(this, "join"), null);
+                // Joining after "wants to call": that notification already says it, so no second one.
+                if (!inCall() && !showing(CALL)) note(this, ONLINE, name + " is online in " + room + " room 💗", d.get("text"), Widgets.open(this, "join"), null);
                 break;
             case "gone":
                 p.edit().putBoolean("here", false).apply();
@@ -52,6 +53,8 @@ public class PushService extends FirebaseMessagingService {
                 love(this, name + " is thinking of you 💗");
                 break;
             case "call":
+                // Already in the room (e.g. still on "Tell them you're here", so her widget didn't know): she's joining you.
+                if (inCall()) break;
                 Notification.Action join = new Notification.Action.Builder(null, "Join", Widgets.open(this, "join")).build();
                 Notification.Action later = new Notification.Action.Builder(null, "Later", Widgets.act(this, "later")).build();
                 note(this, CALL, name + " wants to call 💗", "Tap to join " + room, Widgets.open(this, "join"), null, join, later);
@@ -60,6 +63,12 @@ public class PushService extends FirebaseMessagingService {
                 image(d.get("which"), name);
                 break;
         }
+    }
+
+    boolean showing(int id) {
+        for (android.service.notification.StatusBarNotification s : getSystemService(NotificationManager.class).getActiveNotifications())
+            if (s.getId() == id) return true;
+        return false;
     }
 
     static boolean inCall() {

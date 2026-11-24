@@ -636,7 +636,10 @@ window.rxOpen = async what => {
   quickJoin = what === 'call'; // they already got "wants to call": no note
   $('go').click();
 };
-{ const what = new URLSearchParams(location.search).get('open'); if (what) setTimeout(() => rxOpen(what), 2700); } // after the splash
+{ // after the splash; dropped from the URL, or leaving the call (a reload) would join again
+  const what = new URLSearchParams(location.search).get('open');
+  if (what) { history.replaceState(null, '', location.pathname + location.hash); setTimeout(() => rxOpen(what), 2700); }
+}
 
 // Photo and board (widgets): a square photo from the front camera, or your shared drawing, sent to the other phone.
 // Sealed with AES-GCM, key SHA-256("rxconnect-key:" + room), IV first: Widgets.unseal opens it on the phone.
@@ -1262,7 +1265,10 @@ function attach(c) {
   if (call && call !== c) call.close();
   call = c;
   // The same join / quit sounds as your own, when the other person arrives or leaves (stream can fire twice).
-  c.on('stream', s => { $('call').classList.contains('live') || sound.join(); playRemote(s); setStatus(''); openTell(); sharpen(c.peerConnection); steady(c.peerConnection); });
+  c.on('stream', s => {
+    // She arrived while you were still writing your "I'm here" note: she's with you now, so it's "Just join".
+    if (!$('note').hidden && !$('note').dataset.closing) $('noteSkip').click();
+    $('call').classList.contains('live') || sound.join(); playRemote(s); setStatus(''); openTell(); sharpen(c.peerConnection); steady(c.peerConnection); });
   const gone = () => {
     if (call !== c) return;
     $('call').classList.contains('live') && sound.quit();
@@ -1283,13 +1289,25 @@ function attach(c) {
   // When the other side vanishes without hanging up (app killed, phone off), the connection state can stay "fine"
   // for minutes, frozen on their last frame. A live call always receives data (even muted or camera off), so 6 s
   // with nothing new arriving means they're gone.
-  let last = -1, quiet = 0;
+  let last = -1, quiet = 0, lost = -1, bad = false;
   const watch = setInterval(async () => {
     if (call !== c) return clearInterval(watch);
-    let bytes = 0;
-    (await pc.getStats()).forEach(s => { if (s.type === 'inbound-rtp') bytes += s.bytesReceived; });
+    let bytes = 0, concealed = 0;
+    (await pc.getStats()).forEach(s => {
+      if (s.type !== 'inbound-rtp') return;
+      bytes += s.bytesReceived;
+      if (s.kind === 'audio') concealed = s.concealedSamples || 0; // her voice made up while packets were missing
+    });
+    // Half a second or more of her voice lost since the last look: a dropout, not ordinary packet loss. Resync.
+    const dropout = lost >= 0 && concealed - lost > 24000;
+    if (voice && dropout) hearVoice(holder.srcObject);
+    lost = concealed;
     quiet = bytes > last ? 0 : quiet + 1;
     last = bytes;
+    // Once per bad patch (not every 2 s while it lasts): nothing arriving, or a dropout in her voice.
+    const now = (dropout || quiet > 0) && $('call').classList.contains('live');
+    if (now && !bad) toast('Internet problems: the call may lag');
+    bad = now;
     if (quiet >= 3 && $('call').classList.contains('live')) { gone(); c.close(); }
   }, 2000);
 }
@@ -1332,13 +1350,20 @@ function decode(s) {
 }
 registerProcessor('pcm', class extends AudioWorkletProcessor {
   constructor() {
-    super(); this.q = []; this.at = 0; this.ready = false; this.last = 0;
+    super(); this.q = []; this.at = 0; this.ready = false; this.last = 0; this.low = 99; this.ticks = 0;
     this.port.onmessage = e => e.data.onmessage = m => this.q.push(decode(m.data));
   }
   // Chunks arrive in bursts (they pass through the app's UI thread). Hard cuts and big skips are what sound robotic,
   // so: an 80 ms cushion, a fade instead of a cut when it runs dry, and catching up 20 ms at a time when behind.
+  // Behind means the queue never went below the cushion for a whole second: a standing delay (left by a stall, or the
+  // mic's clock running a bit fast), not a burst. Left alone it made your voice arrive after your picture.
   process(_, [[out]]) {
     if (!this.ready) this.ready = this.q.length >= 4;
+    this.low = Math.min(this.low, this.q.length);
+    if (++this.ticks >= sampleRate / 128) { // ~1 s of render quanta
+      if (this.ready && this.low > 4) { this.q.shift(); this.at = 0; }
+      this.low = 99; this.ticks = 0;
+    }
     if (this.q.length > 13) { this.q.shift(); this.at = 0; } // over 260 ms behind (more than a stall): skip one chunk
     for (let i = 0; i < out.length; i++) {
       if (!this.ready || !this.q.length) { this.ready = false; out[i] = this.last *= 0.99; continue; } // fade out over ~2 ms
@@ -1551,6 +1576,11 @@ function playRemote(s) {
   $('remote').srcObject = new MediaStream(s.getVideoTracks());
   holder.srcObject = new MediaStream(s.getAudioTracks());
   ctx().resume();
+  hearVoice(s);
+}
+// Also rebuilt after a network dropout (attach): Web Audio keeps the delay the gap built up, which left her voice
+// behind her picture for the rest of the call. A fresh source starts from what's arriving now.
+function hearVoice(s) {
   voice && voice.disconnect();
   voice = audioCtx.createMediaStreamSource(s);
   deaf || voice.connect(voiceOut());
