@@ -1608,14 +1608,18 @@ function tone(freq, at, dur, vol) {
   g.gain.setValueAtTime(0, t);
   g.gain.linearRampToValueAtTime(vol, t + 0.012); // no click at the start
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g).connect(c.destination);
+  // Android in a call: with her voice (voiceOut), which gets back the media volume the call turns down.
+  o.connect(g).connect(window.RxAudio && $('call').classList.contains('live') ? voiceOut() : c.destination);
   o.start(t);
   o.stop(t + dur + 0.05);
 }
 const sound = {
   join: () => { tone(523, 0, 0.22, 0.16); tone(784, 0.11, 0.34, 0.16); },
   quit: () => { tone(784, 0, 0.22, 0.14); tone(523, 0.11, 0.32, 0.14); },
-  click: () => tone(1200, 0, 0.05, 0.06),
+  click: () => tone(900, 0, 0.08, 0.2),
+  // Mute / deafen like Discord: down = off, up = back on.
+  off: () => { tone(660, 0, 0.1, 0.22); tone(440, 0.08, 0.16, 0.22); },
+  on: () => { tone(440, 0, 0.1, 0.22); tone(660, 0.08, 0.16, 0.22); },
   message: () => { tone(880, 0, 0.12, 0.07); tone(1320, 0.07, 0.18, 0.07); },
 };
 
@@ -1713,9 +1717,10 @@ function setMic(on) {
   tellApp();
 }
 $('mic').onclick = () => {
-  sound.click();
+  const on = deaf || !local.getAudioTracks()[0].enabled;
+  sound[on ? 'on' : 'off']();
   if (deaf) return setDeaf(false, true); // like Discord: unmuting while deafened undeafens
-  setMic(!local.getAudioTracks()[0].enabled);
+  setMic(on);
 };
 
 // Deafen, like Discord: you stop hearing her and your mic goes off; undeafen brings your mic back as it was.
@@ -1729,7 +1734,7 @@ function setDeaf(on, micOn) {
   setBtn($('deaf'), on ? 'deaf-off' : 'deaf', on ? 'Undeafen' : 'Deafen', on ? 'off' : '');
   setMic(on ? false : micOn || micBefore); // also sends the state (tellApp)
 }
-$('deaf').onclick = () => { sound.click(); setDeaf(!deaf); };
+$('deaf').onclick = () => { sound[deaf ? 'on' : 'off'](); setDeaf(!deaf); };
 
 // ---------- Chat: text, photos and videos over the same direct connection as the mute state (tell / peer
 // 'connection'), gone when the call ends. While it's closed, a message floats on screen and the button gets a dot.

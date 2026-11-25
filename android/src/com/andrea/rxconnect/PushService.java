@@ -32,6 +32,8 @@ public class PushService extends FirebaseMessagingService {
         String name = d.get("name");
         if (name == null || name.trim().isEmpty()) name = "Someone";
         SharedPreferences p = Widgets.prefs(this);
+        // Your own name: you, on your other device (the PC), not your person. Not a notification, and not who the widgets show.
+        if (name.trim().equalsIgnoreCase(p.getString("name", "").trim())) return;
         if (!name.equals("Someone")) p.edit().putString("partner", name).apply();
         String room = p.getString("room", "your");
         switch (kind) {
