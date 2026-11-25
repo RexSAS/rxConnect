@@ -1975,15 +1975,11 @@ addEventListener('keydown', e => {
   $(act[0]).click();
 }, true);
 
-// Windows app: during a call your shortcuts also work while another app is in front (set_shortcuts in
-// windows/src/main.rs). Released when the call ends, so other apps get those keys back; a page load (after a call)
-// clears any left over.
+// Windows app: during a call your shortcuts also work while another app is in front (windows/src/shortcuts.rs),
+// without taking the keys from it: the same keys can also be Discord's. Off when the call ends; a page load (after a
+// call) clears any left over.
 function globalKeys(on) {
-  if (!window.__TAURI__) return;
-  __TAURI__.core.invoke('set_shortcuts', { keys: on ? keys : {} }).then(failed => {
-    const names = (failed || []).map(id => ACTIONS.find(a => a[0] === id)[1]);
-    if (names.length) toast('Taken by another app: ' + names.join(', ') + ' (works only in rxConnect)');
-  }, () => {});
+  window.__TAURI__ && __TAURI__.core.invoke('set_shortcuts', { keys: on ? keys : {} }).catch(() => {});
 }
 window.rxShortcut = id => { if ($('call').style.display === 'block' && ACTIONS.some(a => a[0] === id) && !$(id).disabled) $(id).click(); };
 globalKeys(false);
